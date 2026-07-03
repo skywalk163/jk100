@@ -3,16 +3,42 @@
   "rules": [
     {
       "id": "rogue_001",
-      "name": "测试规则",
+      "name": "驱动精灵",
       "severity": "rogue",
-      "signatures": [],
-      "path_patterns": [],
-      "run_names": [],
-      "file_names": [],
+      "signatures": ["驱动精灵", "DriverGenius"],
+      "path_patterns": ["%ProgramFiles%\\DriverGenius*", "%LocalAppData%\\DriverGenius*"],
+      "run_names": ["DriverGenius", "DGService"],
+      "file_names": ["drivergenius.exe", "dgservice.exe"],
+      "hashes_sha256": [],
+      "service_names": ["DGService"],
+      "homepage": "",
+      "description": "捆绑安装，弹窗广告，主页锁定"
+    },
+    {
+      "id": "rogue_002",
+      "name": "2345全家桶",
+      "severity": "rogue",
+      "signatures": ["2345", "二三四五"],
+      "path_patterns": ["%ProgramFiles%\\2345*", "%LocalAppData%\\2345*"],
+      "run_names": ["2345Explorer", "2345Safe", "2345Desktop"],
+      "file_names": ["2345explorer.exe", "2345safe.exe"],
       "hashes_sha256": [],
       "service_names": [],
       "homepage": "",
-      "description": "占位规则，开发阶段使用"
+      "description": "全家桶捆绑，主页劫持，弹窗广告"
+    },
+    {
+      "id": "rogue_003",
+      "name": "金山毒霸",
+      "severity": "rogue",
+      "signatures": ["金山毒霸", "Kingsoft"],
+      "path_patterns": ["%ProgramFiles%\\Kingsoft*", "%ProgramFiles%\\KSafe*"],
+      "run_names": ["KSafe", "KSafeTray"],
+      "file_names": ["ksafe.exe", "ksafetray.exe"],
+      "hashes_sha256": [],
+      "service_names": [],
+      "homepage": "",
+      "description": "弹窗广告，捆绑安装，性能拖累"
     }
   ]
 }

@@ -8,10 +8,34 @@
       "reason": "系统核心组件"
     },
     {
-      "signer": "Microsoft Windows Hardware Compatibility Publisher",
+      "signer": "Google LLC",
       "hashes_sha256": [],
-      "paths": [],
-      "reason": "Windows 硬件驱动签名"
+      "paths": ["%ProgramFiles%\\Google\\*"],
+      "reason": "Google 产品"
+    },
+    {
+      "signer": "Adobe Inc.",
+      "hashes_sha256": [],
+      "paths": ["%ProgramFiles%\\Adobe\\*"],
+      "reason": "Adobe 产品"
+    },
+    {
+      "signer": "NVIDIA Corporation",
+      "hashes_sha256": [],
+      "paths": ["%ProgramFiles%\\NVIDIA\\*"],
+      "reason": "NVIDIA 驱动"
+    },
+    {
+      "signer": "Intel Corporation",
+      "hashes_sha256": [],
+      "paths": ["%ProgramFiles%\\Intel\\*"],
+      "reason": "Intel 驱动"
+    },
+    {
+      "signer": "Mozilla Corporation",
+      "hashes_sha256": [],
+      "paths": ["%ProgramFiles%\\Mozilla*"],
+      "reason": "Mozilla 产品"
     }
   ]
 }
