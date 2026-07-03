@@ -1,5 +1,7 @@
 supported_targets = "native"
 
+native-stub = ["cwrap.c"]
+
 options(
   "link": {
     "native": {
