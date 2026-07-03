@@ -22,3 +22,30 @@ pub fn schedule_delete_on_reboot(path : String) -> Bool {
   let c_path = path.to_bytes()
   jk100_schedule_delete_on_reboot(c_path) == 0
 }
+
+extern "c" fn jk100_sleep(ms : Int) -> Unit = "jk100_sleep"
+extern "c" fn jk100_timestamp() -> String = "jk100_timestamp"
+
+#borrow(_path)
+extern "c" fn jk100_read_file_bytes(_path : Bytes) -> Bytes = "jk100_read_file_bytes"
+
+#borrow(_path)
+extern "c" fn jk100_read_file_text(_path : Bytes) -> String = "jk100_read_file_text"
+
+pub fn sleep(ms : Int) -> Unit {
+  jk100_sleep(ms)
+}
+
+pub fn timestamp() -> String {
+  jk100_timestamp()
+}
+
+pub fn read_file_bytes(path : String) -> Bytes {
+  let c_path = path.to_bytes()
+  jk100_read_file_bytes(c_path)
+}
+
+pub fn read_file_text(path : String) -> String {
+  let c_path = path.to_bytes()
+  jk100_read_file_text(c_path)
+}

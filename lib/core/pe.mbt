@@ -105,7 +105,7 @@ pub fn parse_pe(data : Bytes) -> PEInfo {
   }
 }
 
-pub async fn parse_pe_file(path : String) -> PEInfo raise {
-  let data = @fs.read_file(path)
-  parse_pe(data.binary())
+pub fn parse_pe_file(path : String) -> PEInfo {
+  let data = @platform.read_file_bytes(path)
+  parse_pe(data)
 }

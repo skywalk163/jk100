@@ -239,3 +239,46 @@ void jk100_set_thread_priority(int32_t priority) {
   }
   SetThreadPriority(GetCurrentThread(), win_priority);
 }
+
+void jk100_sleep(int32_t ms) {
+  Sleep((DWORD)ms);
+}
+
+moonbit_string_t jk100_timestamp() {
+  SYSTEMTIME st;
+  GetLocalTime(&st);
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d",
+    st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
+  return jk100_cstr_to_moonbit(buf);
+}
+
+moonbit_bytes_t jk100_read_file_bytes(const char* path) {
+  HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return moonbit_make_bytes(0, 0);
+  LARGE_INTEGER file_size;
+  if (!GetFileSizeEx(h, &file_size)) { CloseHandle(h); return moonbit_make_bytes(0, 0); }
+  int32_t size = (int32_t)file_size.QuadPart;
+  moonbit_bytes_t buf = moonbit_make_bytes(size, 0);
+  DWORD read_bytes;
+  ReadFile(h, buf, (DWORD)size, &read_bytes, NULL);
+  CloseHandle(h);
+  return buf;
+}
+
+moonbit_string_t jk100_read_file_text(const char* path) {
+  HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE) return moonbit_make_string(0, 0);
+  LARGE_INTEGER file_size;
+  if (!GetFileSizeEx(h, &file_size)) { CloseHandle(h); return moonbit_make_string(0, 0); }
+  int32_t size = (int32_t)file_size.QuadPart;
+  char* raw = (char*)malloc(size + 1);
+  DWORD read_bytes;
+  ReadFile(h, raw, (DWORD)size, &read_bytes, NULL);
+  CloseHandle(h);
+  int wlen = MultiByteToWideChar(CP_UTF8, 0, raw, (int)read_bytes, NULL, 0);
+  moonbit_string_t ms = moonbit_make_string(wlen, 0);
+  MultiByteToWideChar(CP_UTF8, 0, raw, (int)read_bytes, (LPWSTR)ms, wlen);
+  free(raw);
+  return ms;
+}

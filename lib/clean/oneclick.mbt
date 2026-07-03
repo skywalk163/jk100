@@ -32,7 +32,7 @@ pub fn one_click_clean(
 
   let manifest : QuarantineManifest = {
     scan_id: scan_id,
-    timestamp: @async.now().to_string(),
+    timestamp: @platform.timestamp(),
     items: manifest_items,
   }
   write_manifest(scan_id, manifest)

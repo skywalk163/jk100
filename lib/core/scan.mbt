@@ -5,13 +5,13 @@ struct ScanCallbacks {
   on_error : (String) -> Unit
 }
 
-pub async fn run_scan(
+pub fn run_scan(
   db : SigDB,
   clamav : ClamAVConfig,
   target : ScanTarget,
   speed : ScanSpeed,
   callbacks : ScanCallbacks
-) -> ScanResult raise {
+) -> ScanResult {
   let result : ScanResult = {
     threats: [],
     total_files: 0,
@@ -38,11 +38,10 @@ pub async fn run_scan(
       High => 0
     }
     if sleep_ms > 0 {
-      @async.sleep(sleep_ms)
+      @platform.sleep(sleep_ms)
     }
 
-    let file_data = @fs.read_file(path)
-    let hash = bytes_sha256(file_data.binary())
+    let hash = bytes_sha256(@platform.read_file_bytes(path))
 
     let pe_info = parse_pe_file(path)
     let file_name = path_filename(path)
@@ -149,7 +148,7 @@ fn threat_type_to_string(t : ThreatType) -> String {
   }
 }
 
-pub async fn run_cli() -> Unit raise {
+pub fn run_cli() -> Unit raise {
   println("jk100 极快100 防恶意软件 v0.1.0")
   println("========================================")
 

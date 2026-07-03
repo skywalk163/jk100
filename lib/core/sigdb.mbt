@@ -3,24 +3,22 @@ struct SigDB {
   whitelist : WhitelistDB
 } derive(@debug.Debug)
 
-pub async fn load(rules_path : String, whitelist_path : String) -> SigDB raise {
-  let rules_data = @fs.read_file(rules_path)
-  let whitelist_data = @fs.read_file(whitelist_path)
+pub fn load(rules_path : String, whitelist_path : String) -> SigDB raise {
+  let rules_content = @platform.read_file_text(rules_path)
+  let whitelist_content = @platform.read_file_text(whitelist_path)
 
-  let rules = load_rules(rules_data)
-  let whitelist = load_whitelist(whitelist_data)
+  let rules = load_rules(rules_content)
+  let whitelist = load_whitelist(whitelist_content)
 
   { rules, whitelist }
 }
 
-fn load_rules(data : &@io.Data) -> RogueRulesDB raise {
-  let content = data.text()
+fn load_rules(content : String) -> RogueRulesDB raise {
   let json = @json.parse(content)
   @json.from_json(json)
 }
 
-fn load_whitelist(data : &@io.Data) -> WhitelistDB raise {
-  let content = data.text()
+fn load_whitelist(content : String) -> WhitelistDB raise {
   let json = @json.parse(content)
   @json.from_json(json)
 }

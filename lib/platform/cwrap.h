@@ -31,4 +31,9 @@ moonbit_string_t jk100_cstr_to_moonbit(const char* s);
 void jk100_free_cstr_array(char** arr, int32_t count);
 void jk100_free_int_array(int32_t* arr);
 
+void jk100_sleep(int32_t ms);
+moonbit_string_t jk100_timestamp();
+moonbit_bytes_t jk100_read_file_bytes(const char* path);
+moonbit_string_t jk100_read_file_text(const char* path);
+
 #endif

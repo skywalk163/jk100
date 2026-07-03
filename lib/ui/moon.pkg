@@ -7,9 +7,8 @@ supported_targets = "native"
 options(
   "link": {
     "native": {
-      "cc": "gcc",
       "cc-flags": "-I./",
-      "cc-link-flags": "-lkernel32"
+      "cc-link-flags": "-lkernel32 -Xlinker -subsystem:console"
     }
   },
   "native-stub": [ "imgui_cwrap.c" ],

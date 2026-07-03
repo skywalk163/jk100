@@ -5,7 +5,7 @@ pub let quarantine_base : String =
   }
 
 fn generate_scan_id() -> String {
-  @async.now().to_string()
+  @platform.timestamp()
 }
 
 pub fn create_quarantine_dir(scan_id : String) -> String {
