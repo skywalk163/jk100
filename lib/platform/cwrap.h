@@ -56,4 +56,8 @@ int32_t jk100_path_contains(moonbit_string_t path, moonbit_string_t sub);
 // 完整扫描 (C 端实现): 枚举+匹配+输出,返回威胁数
 int32_t jk100_run_scan(moonbit_string_t path);
 
+// 实时守护监控: 监控目录文件变化,新文件自动扫描,返回威胁数
+int32_t jk100_start_guard(moonbit_string_t path);
+void jk100_stop_guard();
+
 #endif

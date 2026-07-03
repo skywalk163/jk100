@@ -160,15 +160,31 @@ jk100/
 ### 运行
 
 ```powershell
-# CLI 模式 (当前推荐,实际可用)
+# 手动扫描
 .\jk100.exe --cli --scan "C:\Users"
 .\jk100.exe --cli --scan "C:\Program Files"
 .\jk100.exe --cli --quick          # 快速扫描用户目录
-.\jk100.exe --cli --help           # 显示帮助
+
+# 实时守护 (监控目录,新文件自动扫描)
+.\jk100.exe --cli --guard "C:\Users"
+.\jk100.exe --cli --guard "C:\Downloads"
+
+# 显示帮助
+.\jk100.exe --cli --help
 
 # GUI 模式 (开发中,暂不可用)
 .\jk100.exe
 ```
+
+### 扫描模式 vs 守护模式
+
+| 模式 | 命令 | 特点 |
+|---|---|---|
+| 手动扫描 | `--scan <路径>` | 一次性扫描指定目录，输出完整报告 |
+| 快速扫描 | `--quick` | 扫描用户目录，等同于 `--scan "C:\Users"` |
+| 实时守护 | `--guard <路径>` | 持续监控目录，每 2 秒轮询，新文件自动扫描，发现威胁立即告警 |
+
+守护模式基于定时轮询（2 秒间隔），先建立基线，之后仅对新增文件进行扫描，资源占用低。按 Ctrl+C 停止守护。
 
 ### 实测输出示例
 
@@ -219,8 +235,10 @@ P1 阶段（查杀清理引擎 MVP）已完成代码实现，但 **MoonBit v0.10
 
 ### 当前架构
 
-- [main.mbt](main/main.mbt) — 仅做 CLI 参数分发（纯 if/else，无 Array/JSON），调用 `@platform.run_scan`
-- [cwrap.c](lib/platform/cwrap.c) — `jk100_run_scan` 实现完整扫描：递归枚举 + 白名单跳过 + 规则匹配 + 进度/结果输出
+- [main.mbt](main/main.mbt) — 仅做 CLI 参数分发（纯 if/else，无 Array/JSON），调用 `@platform.run_scan` / `@platform.start_guard`
+- [cwrap.c](lib/platform/cwrap.c) — C 端实现核心逻辑：
+  - `jk100_run_scan` — 完整扫描：递归枚举 + 白名单跳过 + 规则匹配 + 进度/结果输出
+  - `jk100_start_guard` — 实时守护：定时轮询 + 基线对比 + 新增文件扫描 + 实时告警
 - 硬编码的流氓软件特征文件名规则（adware.exe、popup.exe、hao123.exe 等 20 条）
 - 硬编码的白名单路径（Windows 系统目录自动跳过）
 
@@ -275,8 +293,8 @@ P1 阶段（查杀清理引擎 MVP）已完成代码实现，但 **MoonBit v0.10
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P1 | 查杀清理引擎 MVP | ✅ 已完成（CLI 扫描可用，受 MoonBit ICE 限制核心逻辑用 C FFI 实现） |
-| P2 | 实时行为监控 + 社会工程启发式检测 | 计划中 |
+| P1 | 查杀清理引擎 MVP | ✅ 已完成（CLI 扫描 + 实时守护可用，受 MoonBit ICE 限制核心逻辑用 C FFI 实现） |
+| P2 | 实时行为监控 + 社会工程启发式检测 | 🚧 进行中（文件级实时守护已实现，行为监控待开发） |
 | P3 | 自我保护（内核 Hook） | 计划中 |
 | P4 | 网络侧防护（恶意 DNS/流量拦截） | 计划中 |
 | P5 | 轻量 AI 检测（本地 ML 推理） | 计划中 |

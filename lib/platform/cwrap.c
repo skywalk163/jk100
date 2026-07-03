@@ -553,3 +553,168 @@ int32_t jk100_run_scan(moonbit_string_t path_s) {
   printf("========================================\n");
   return threats;
 }
+
+// ============= 实时守护监控 (定时轮询方案) =============
+// 定期扫描目录,对比发现新增文件并扫描,比 ReadDirectoryChangesW 更可靠
+
+static volatile int g_guard_running = 0;
+
+// 检查单个文件是否匹配威胁,返回匹配的模式名(或NULL)
+static const char* check_single_file(const char* file_path) {
+  char path_lower[MAX_PATH];
+  strncpy(path_lower, file_path, MAX_PATH - 1);
+  path_lower[MAX_PATH - 1] = 0;
+  to_lower(path_lower);
+
+  // 跳过白名单
+  if (is_whitelisted_path(path_lower)) return NULL;
+
+  // 跳过大文件
+  WIN32_FILE_ATTRIBUTE_DATA fad;
+  if (GetFileAttributesExA(file_path, GetFileExInfoStandard, &fad)) {
+    LARGE_INTEGER size;
+    size.LowPart = fad.nFileSizeLow;
+    size.HighPart = fad.nFileSizeHigh;
+    if (size.QuadPart > 52428800LL) return NULL;
+  }
+
+  return match_rogue_pattern(path_lower);
+}
+
+// 已知文件集合(用简单数组存储,文件数不大时足够)
+#define MAX_KNOWN_FILES 10000
+static char* g_known_files[MAX_KNOWN_FILES];
+static int g_known_count = 0;
+
+static int is_known_file(const char* path) {
+  for (int i = 0; i < g_known_count; i++) {
+    if (strcmp(g_known_files[i], path) == 0) return 1;
+  }
+  return 0;
+}
+
+static void add_known_file(const char* path) {
+  if (g_known_count >= MAX_KNOWN_FILES) return;
+  g_known_files[g_known_count++] = _strdup(path);
+}
+
+static void clear_known_files() {
+  for (int i = 0; i < g_known_count; i++) {
+    free(g_known_files[i]);
+    g_known_files[i] = NULL;
+  }
+  g_known_count = 0;
+}
+
+// 守护模式: 定时轮询扫描目录
+int32_t jk100_start_guard(moonbit_string_t path_s) {
+  char watch_path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, watch_path, MAX_PATH);
+  int len = (int)strlen(watch_path);
+  if (len > 0 && watch_path[len - 1] == '\\') watch_path[len - 1] = 0;
+
+  // 禁用 stdout 缓冲,确保实时输出
+  setbuf(stdout, NULL);
+
+  printf("[守护] 启动实时监控: %s\n", watch_path);
+  printf("[守护] 监控目录及所有子目录的文件变化 (轮询间隔: 2秒)\n");
+  printf("[守护] 按 Ctrl+C 停止守护\n");
+  printf("----------------------------------------\n");
+
+  // 先做一次初始扫描,建立基线
+  printf("[守护] 初始扫描中...\n");
+
+  // 释放旧的枚举结果
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    g_enum_count = 0;
+  }
+  jk100_enum_recursive(watch_path);
+
+  int initial_count = g_enum_count;
+  // 将初始文件加入已知列表
+  for (int i = 0; i < g_enum_count; i++) {
+    add_known_file(g_enum_files[i]);
+  }
+
+  // 释放枚举结果
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    free(g_enum_files);
+    g_enum_files = NULL;
+    g_enum_count = 0;
+    g_enum_cap = 0;
+  }
+
+  printf("[守护] 基线建立完成,已知文件: %d 个\n", initial_count);
+  printf("[守护] 开始实时监控...\n");
+  printf("----------------------------------------\n");
+
+  g_guard_running = 1;
+  int threat_count = 0;
+  int total_new_files = 0;
+  int scan_round = 0;
+
+  while (g_guard_running) {
+    // 等待 2 秒 (分段等待,每 200ms 检查一次停止标志)
+    for (int i = 0; i < 10 && g_guard_running; i++) {
+      Sleep(200);
+    }
+    if (!g_guard_running) break;
+
+    scan_round++;
+
+    // 枚举当前文件
+    jk100_enum_recursive(watch_path);
+    int current_count = g_enum_count;
+
+    // 检查新增文件
+    for (int i = 0; i < current_count; i++) {
+      if (!is_known_file(g_enum_files[i])) {
+        // 新文件!
+        add_known_file(g_enum_files[i]);
+        total_new_files++;
+
+        // 扫描新文件
+        const char* matched = check_single_file(g_enum_files[i]);
+        if (matched != NULL) {
+          threat_count++;
+          SYSTEMTIME st;
+          GetLocalTime(&st);
+          printf("[威胁] [%02d:%02d:%02d] 检测到新文件: %s\n",
+            st.wHour, st.wMinute, st.wSecond, g_enum_files[i]);
+          printf("  匹配规则: %s\n", matched);
+          printf("  建议: 立即隔离或删除该文件\n");
+        }
+      }
+    }
+
+    // 释放本轮枚举结果
+    if (g_enum_files) {
+      for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+      free(g_enum_files);
+      g_enum_files = NULL;
+      g_enum_count = 0;
+      g_enum_cap = 0;
+    }
+  }
+
+  // 清理已知文件列表
+  clear_known_files();
+  g_guard_running = 0;
+
+  printf("\n========================================\n");
+  printf("守护模式已停止\n");
+  printf("  监控目录: %s\n", watch_path);
+  printf("  扫描轮次: %d\n", scan_round);
+  printf("  新增文件数: %d\n", total_new_files);
+  printf("  发现威胁: %d\n", threat_count);
+  printf("========================================\n");
+
+  return threat_count;
+}
+
+// 停止守护
+void jk100_stop_guard() {
+  g_guard_running = 0;
+}

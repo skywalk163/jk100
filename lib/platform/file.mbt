@@ -117,3 +117,17 @@ extern "c" fn jk100_run_scan(_path : String) -> Int = "jk100_run_scan"
 pub fn run_scan(path : String) -> Int {
   jk100_run_scan(path)
 }
+
+// ============= 实时守护监控 (C 端实现) =============
+#borrow(_path)
+extern "c" fn jk100_start_guard(_path : String) -> Int = "jk100_start_guard"
+
+extern "c" fn jk100_stop_guard() -> Unit = "jk100_stop_guard"
+
+pub fn start_guard(path : String) -> Int {
+  jk100_start_guard(path)
+}
+
+pub fn stop_guard() -> Unit {
+  jk100_stop_guard()
+}
