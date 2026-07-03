@@ -1,6 +1,5 @@
 import {
-  "jk100/jk100/lib/core",
-  "jk100/jk100/lib/clean"
+  "moonbitlang/core/debug"
 }
 
 supported_targets = "native"
