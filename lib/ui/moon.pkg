@@ -1,3 +1,17 @@
 import {
   "jk100/jk100/lib/core",
+  "jk100/jk100/lib/clean"
 }
+
+supported_targets = "native"
+
+options(
+  "link": {
+    "native": {
+      "cc": "gcc",
+      "cc-flags": "-I./",
+      "cc-link-flags": "-lkernel32"
+    }
+  },
+  "native-stub": [ "imgui_cwrap.c" ],
+)

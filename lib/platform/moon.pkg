@@ -8,5 +8,4 @@ options(
       "cc-link-flags": "-lkernel32 -ladvapi32 -lpsapi -lole32 -lshell32"
     }
   },
-  "native-stub": [ "cwrap.c" ],
 )

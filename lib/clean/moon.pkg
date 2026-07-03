@@ -1,0 +1,4 @@
+import {
+  "jk100/jk100/lib/platform",
+  "jk100/jk100/lib/core"
+}
