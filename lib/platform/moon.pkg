@@ -1,3 +1,7 @@
+import {
+  "moonbitlang/core/debug"
+}
+
 supported_targets = "native"
 
 options(
@@ -8,4 +12,5 @@ options(
       "cc-link-flags": "-lkernel32 -ladvapi32 -lpsapi -lole32 -lshell32"
     }
   },
+  "native-stub": [ "cwrap.c" ],
 )
