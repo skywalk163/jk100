@@ -3,172 +3,172 @@
     {
       "root": "jk100/jk100",
       "rel": "lib/clean",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\lib\\clean\\clean.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\jk100\\jk100\\lib\\clean\\clean.mi"
     },
     {
       "root": "jk100/jk100",
       "rel": "lib/core",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\lib\\core\\core.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\jk100\\jk100\\lib\\core\\core.mi"
     },
     {
       "root": "jk100/jk100",
       "rel": "lib/platform",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\lib\\platform\\platform.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\jk100\\jk100\\lib\\platform\\platform.mi"
     },
     {
       "root": "jk100/jk100",
       "rel": "lib/ui",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\lib\\ui\\ui.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\jk100\\jk100\\lib\\ui\\ui.mi"
     },
     {
       "root": "jk100/jk100",
       "rel": "main",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\main\\main.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\jk100\\jk100\\main\\main.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\async.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\async.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "aqueue",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\aqueue\\aqueue.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\aqueue\\aqueue.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "cond_var",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\cond_var\\cond_var.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\cond_var\\cond_var.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "fs",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\fs\\fs.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\fs\\fs.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "gzip",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\gzip\\gzip.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\gzip\\gzip.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "http",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\http\\http.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\http\\http.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/bytes_util",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\bytes_util\\bytes_util.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\bytes_util\\bytes_util.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/c_buffer",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\c_buffer\\c_buffer.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\c_buffer\\c_buffer.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/coroutine",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\coroutine\\coroutine.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\coroutine\\coroutine.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/env_util",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\env_util\\env_util.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\env_util\\env_util.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/event_loop",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\event_loop\\event_loop.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\event_loop\\event_loop.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/fd_util",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\fd_util\\fd_util.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\fd_util\\fd_util.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/gzip_internal",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\gzip_internal\\gzip_internal.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\gzip_internal\\gzip_internal.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/io_buffer",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\io_buffer\\io_buffer.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\io_buffer\\io_buffer.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/os_string",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\os_string\\os_string.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\os_string\\os_string.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "internal/time",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\internal\\time\\time.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\internal\\time\\time.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "io",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\io\\io.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\io\\io.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "js_async",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\js_async\\js_async.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\js_async\\js_async.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "os_error",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\os_error\\os_error.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\os_error\\os_error.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "pipe",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\pipe\\pipe.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\pipe\\pipe.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "process",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\process\\process.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\process\\process.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "raw_fd",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\raw_fd\\raw_fd.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\raw_fd\\raw_fd.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "semaphore",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\semaphore\\semaphore.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\semaphore\\semaphore.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "signal",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\signal\\signal.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\signal\\signal.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "socket",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\socket\\socket.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\socket\\socket.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "stdio",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\stdio\\stdio.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\stdio\\stdio.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "tls",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\tls\\tls.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\tls\\tls.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "types",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\types\\types.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\types\\types.mi"
     },
     {
       "root": "moonbitlang/async",
       "rel": "websocket",
-      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\.mooncakes\\moonbitlang\\async\\websocket\\websocket.mi"
+      "artifact": "G:\\traework\\jk100\\_build\\native\\debug\\build\\moonbitlang\\async\\websocket\\websocket.mi"
     },
     {
       "root": "moonbitlang/core",

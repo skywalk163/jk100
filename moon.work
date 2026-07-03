@@ -1,0 +1,4 @@
+members = [
+  ".",
+  "./.mooncakes/moonbitlang/async",
+]
