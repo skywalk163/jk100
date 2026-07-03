@@ -149,51 +149,16 @@ fn threat_type_to_string(t : ThreatType) -> String {
 }
 
 pub fn run_cli() -> Unit raise {
-  println("jk100 极快100 防恶意软件 v0.1.0")
-  println("========================================")
+  @platform.println("jk100 极快100 防恶意软件 v0.1.0")
+  @platform.println("========================================")
 
   if !@platform.is_elevated() {
-    println("[警告] 未以管理员身份运行，部分功能受限")
+    @platform.println("[警告] 未以管理员身份运行，部分功能受限")
   }
 
+  // 加载规则库
   let db = load("bundled/sigdb/rogue_rules.json", "bundled/sigdb/whitelist.json")
-  println("规则库版本: " + db.rules.version)
-  println("流氓软件规则数: " + db.rules.rules.length().to_string())
-  println("白名单条目数: " + db.whitelist.entries.length().to_string())
-
-  let mut clamav = default_config()
-  clamav = check_available(clamav)
-  if !clamav.available {
-    println("[警告] ClamAV 不可用，仅扫描流氓软件")
-  }
-
-  println("\n开始快速扫描...")
-  let callbacks : ScanCallbacks = {
-    on_progress: (scanned, total) => {
-      println("进度: " + scanned.to_string() + "/" + total.to_string())
-    },
-    on_threat: (threat) => {
-      println("[发现] " + threat.family_name + ": " + threat.file_path)
-    },
-    on_complete: (result) => {
-      println("\n扫描完成！")
-      println("威胁数: " + result.threats.length().to_string())
-    },
-    on_error: (msg) => {
-      println("[错误] " + msg)
-    },
-  }
-
-  let result : ScanResult = run_scan(db, clamav, QuickScan, Normal, callbacks)
-
-  if result.threats.length() == 0 {
-    println("\n系统安全，未发现威胁。")
-  } else {
-    println("\n发现 " + result.threats.length().to_string() + " 个威胁：")
-    for threat in result.threats {
-      println("  [" + threat_type_to_string(threat.threat_type) + "] " + threat.family_name)
-      println("    路径: " + threat.file_path)
-      println("    描述: " + threat.description)
-    }
-  }
+  @platform.println("规则库版本: " + db.rules.version)
+  @platform.println("流氓软件规则数: " + @platform.int_to_string(db.rules.rules.length()))
+  @platform.println("白名单条目数: " + @platform.int_to_string(db.whitelist.entries.length()))
 }

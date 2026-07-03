@@ -12,6 +12,25 @@ moonbit_string_t jk100_cstr_to_moonbit(const char* s) {
   return ms;
 }
 
+// 将 MoonBit String (UTF-16) 转换为 C char* (UTF-8)
+// buf_size 是 buf 的容量,返回实际写入的长度(不含\0)
+// 如果 buf 为 NULL 或 buf_size 不够,只返回所需长度
+int32_t jk100_moonbit_to_cstr(moonbit_string_t s, char* buf, int32_t buf_size) {
+  if (s == NULL) {
+    if (buf && buf_size > 0) buf[0] = 0;
+    return 0;
+  }
+  int32_t str_len = Moonbit_array_length(s);
+  // 先计算需要的 UTF-8 长度
+  int32_t utf8_len = WideCharToMultiByte(CP_UTF8, 0, (LPCWSTR)s, str_len, NULL, 0, NULL, NULL);
+  if (buf == NULL || buf_size < utf8_len + 1) {
+    return utf8_len;
+  }
+  WideCharToMultiByte(CP_UTF8, 0, (LPCWSTR)s, str_len, buf, buf_size, NULL, NULL);
+  buf[utf8_len] = 0;
+  return utf8_len;
+}
+
 void jk100_free_cstr_array(char** arr, int32_t count) {
   if (arr == NULL) return;
   for (int i = 0; i < count; i++) { free(arr[i]); }
@@ -102,7 +121,9 @@ int32_t jk100_enum_run_keys(char*** names, char*** values, int32_t* count) {
   return 0;
 }
 
-int32_t jk100_delete_run_key(const char* name) {
+int32_t jk100_delete_run_key(moonbit_string_t name_s) {
+  char name[MAX_PATH];
+  jk100_moonbit_to_cstr(name_s, name, MAX_PATH);
   const char* run_paths[] = {
     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run",
     "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
@@ -143,7 +164,9 @@ int32_t jk100_enum_services(char*** names, char*** display_names, int32_t** stat
   return 0;
 }
 
-int32_t jk100_stop_service(const char* name) {
+int32_t jk100_stop_service(moonbit_string_t name_s) {
+  char name[MAX_PATH];
+  jk100_moonbit_to_cstr(name_s, name, MAX_PATH);
   SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
   if (scm == NULL) return -1;
   SC_HANDLE svc = OpenServiceA(scm, name, SERVICE_STOP | SERVICE_QUERY_STATUS);
@@ -160,7 +183,9 @@ int32_t jk100_stop_service(const char* name) {
   return 0;
 }
 
-int32_t jk100_delete_service(const char* name) {
+int32_t jk100_delete_service(moonbit_string_t name_s) {
+  char name[MAX_PATH];
+  jk100_moonbit_to_cstr(name_s, name, MAX_PATH);
   SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
   if (scm == NULL) return -1;
   SC_HANDLE svc = OpenServiceA(scm, name, DELETE);
@@ -171,7 +196,10 @@ int32_t jk100_delete_service(const char* name) {
   return ok ? 0 : -1;
 }
 
-int32_t jk100_move_file_to_quarantine(const char* src, const char* dst) {
+int32_t jk100_move_file_to_quarantine(moonbit_string_t src_s, moonbit_string_t dst_s) {
+  char src[MAX_PATH], dst[MAX_PATH];
+  jk100_moonbit_to_cstr(src_s, src, MAX_PATH);
+  jk100_moonbit_to_cstr(dst_s, dst, MAX_PATH);
   char dir[MAX_PATH];
   strncpy(dir, dst, MAX_PATH - 1);
   dir[MAX_PATH - 1] = 0;
@@ -193,14 +221,18 @@ int32_t jk100_move_file_to_quarantine(const char* src, const char* dst) {
   return MoveFileA(src, dst) ? 0 : -1;
 }
 
-int32_t jk100_is_file_in_use(const char* path) {
+int32_t jk100_is_file_in_use(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
   HANDLE h = CreateFileA(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
   if (h == INVALID_HANDLE_VALUE) return 1;
   CloseHandle(h);
   return 0;
 }
 
-int32_t jk100_schedule_delete_on_reboot(const char* path) {
+int32_t jk100_schedule_delete_on_reboot(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
   return MoveFileExA(path, NULL, MOVEFILE_DELAY_UNTIL_REBOOT) ? 0 : -1;
 }
 
@@ -253,7 +285,15 @@ moonbit_string_t jk100_timestamp() {
   return jk100_cstr_to_moonbit(buf);
 }
 
-moonbit_bytes_t jk100_read_file_bytes(const char* path) {
+moonbit_string_t jk100_int_to_string(int32_t n) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%d", n);
+  return jk100_cstr_to_moonbit(buf);
+}
+
+moonbit_bytes_t jk100_read_file_bytes(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
   HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE) return moonbit_make_bytes(0, 0);
   LARGE_INTEGER file_size;
@@ -266,7 +306,9 @@ moonbit_bytes_t jk100_read_file_bytes(const char* path) {
   return buf;
 }
 
-moonbit_string_t jk100_read_file_text(const char* path) {
+moonbit_string_t jk100_read_file_text(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
   HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
   if (h == INVALID_HANDLE_VALUE) return moonbit_make_string(0, 0);
   LARGE_INTEGER file_size;
@@ -281,4 +323,233 @@ moonbit_string_t jk100_read_file_text(const char* path) {
   MultiByteToWideChar(CP_UTF8, 0, raw, (int)read_bytes, (LPWSTR)ms, wlen);
   free(raw);
   return ms;
+}
+
+// ============= CLI 参数获取 =============
+int32_t jk100_get_arg_count() {
+  return (int32_t)__argc;
+}
+
+moonbit_string_t jk100_get_arg(int32_t idx) {
+  if (idx < 0 || idx >= (int32_t)__argc) return moonbit_make_string(0, 0);
+  return jk100_cstr_to_moonbit(__argv[idx]);
+}
+
+// ============= 目录枚举 (递归遍历文件) =============
+// 全局缓冲区存储枚举结果
+static char** g_enum_files = NULL;
+static int32_t g_enum_count = 0;
+static int32_t g_enum_cap = 0;
+
+static void jk100_enum_add(const char* path) {
+  if (g_enum_count >= g_enum_cap) {
+    g_enum_cap = g_enum_cap == 0 ? 256 : g_enum_cap * 2;
+    g_enum_files = (char**)realloc(g_enum_files, g_enum_cap * sizeof(char*));
+  }
+  g_enum_files[g_enum_count++] = _strdup(path);
+}
+
+static void jk100_enum_recursive(const char* dir) {
+  char pattern[MAX_PATH];
+  snprintf(pattern, sizeof(pattern), "%s\\*", dir);
+  WIN32_FIND_DATAA fd;
+  HANDLE h = FindFirstFileA(pattern, &fd);
+  if (h == INVALID_HANDLE_VALUE) return;
+  do {
+    if (strcmp(fd.cFileName, ".") == 0 || strcmp(fd.cFileName, "..") == 0) continue;
+    char full[MAX_PATH];
+    snprintf(full, sizeof(full), "%s\\%s", dir, fd.cFileName);
+    if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+      // 限制递归深度避免耗时过长,但仍递归子目录
+      jk100_enum_recursive(full);
+    } else {
+      jk100_enum_add(full);
+    }
+  } while (FindNextFileA(h, &fd));
+  FindClose(h);
+}
+
+int32_t jk100_enum_files(moonbit_string_t path_s) {
+  // 释放上一次的结果
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    g_enum_count = 0;
+  }
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
+  // 去除末尾反斜杠
+  int len = (int)strlen(path);
+  if (len > 0 && path[len - 1] == '\\') path[len - 1] = 0;
+  jk100_enum_recursive(path);
+  return g_enum_count;
+}
+
+moonbit_string_t jk100_get_enum_file(int32_t idx) {
+  if (idx < 0 || idx >= g_enum_count) return moonbit_make_string(0, 0);
+  return jk100_cstr_to_moonbit(g_enum_files[idx]);
+}
+
+void jk100_free_enum_files() {
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    free(g_enum_files);
+    g_enum_files = NULL;
+    g_enum_count = 0;
+    g_enum_cap = 0;
+  }
+}
+
+// ============= 文件大小获取 (用于跳过大文件) =============
+int64_t jk100_file_size(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
+  WIN32_FILE_ATTRIBUTE_DATA fad;
+  if (!GetFileAttributesExA(path, GetFileExInfoStandard, &fad)) return -1;
+  LARGE_INTEGER size;
+  size.LowPart = fad.nFileSizeLow;
+  size.HighPart = fad.nFileSizeHigh;
+  return size.QuadPart;
+}
+
+// ============= 简易文件名匹配 (检查是否包含子串) =============
+int32_t jk100_path_contains(moonbit_string_t path_s, moonbit_string_t sub_s) {
+  char path[MAX_PATH];
+  char sub[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
+  jk100_moonbit_to_cstr(sub_s, sub, MAX_PATH);
+  // 大小写不敏感
+  for (char* p = path; *p; p++) if (*p >= 'A' && *p <= 'Z') *p = *p - 'A' + 'a';
+  for (char* p = sub; *p; p++) if (*p >= 'A' && *p <= 'Z') *p = *p - 'A' + 'a';
+  return strstr(path, sub) != NULL ? 1 : 0;
+}
+
+// ============= 完整扫描逻辑 (在 C 端实现,绕过 MoonBit Array ICE) =============
+// 硬编码的流氓软件特征文件名
+static const char* ROGUE_PATTERNS[] = {
+  "adware.exe", "popup.exe", "ads.exe",
+  "hijack.exe", "browserhelper.exe",
+  "fakeav.exe", "rogueav.exe", "systemprotector.exe",
+  "360notifier.exe", "360tray.exe",
+  "recommend.exe", "toutiao.exe", "news.exe",
+  "bundle.exe", "setup_helper.exe",
+  "hao123.exe", "2345.exe", "duuba.exe",
+  "sogouexplorer.exe", "liebao.exe",
+  NULL
+};
+
+// 硬编码的白名单路径片段
+static const char* WHITELIST_PATHS[] = {
+  "windows\\system32", "windows\\syswow64",
+  "program files\\windowsapps",
+  NULL
+};
+
+static void to_lower(char* s) {
+  for (; *s; s++) if (*s >= 'A' && *s <= 'Z') *s = *s - 'A' + 'a';
+}
+
+static int path_has_sub(char* path_lower, const char* sub) {
+  return strstr(path_lower, sub) != NULL;
+}
+
+static const char* match_rogue_pattern(char* path_lower) {
+  for (int i = 0; ROGUE_PATTERNS[i] != NULL; i++) {
+    if (strstr(path_lower, ROGUE_PATTERNS[i]) != NULL) {
+      return ROGUE_PATTERNS[i];
+    }
+  }
+  return NULL;
+}
+
+static int is_whitelisted_path(char* path_lower) {
+  for (int i = 0; WHITELIST_PATHS[i] != NULL; i++) {
+    if (strstr(path_lower, WHITELIST_PATHS[i]) != NULL) return 1;
+  }
+  return 0;
+}
+
+// 完整扫描: 枚举+匹配+输出,返回发现的威胁数
+int32_t jk100_run_scan(moonbit_string_t path_s) {
+  char path[MAX_PATH];
+  jk100_moonbit_to_cstr(path_s, path, MAX_PATH);
+  int len = (int)strlen(path);
+  if (len > 0 && path[len - 1] == '\\') path[len - 1] = 0;
+
+  printf("正在扫描: %s\n", path);
+  printf("----------------------------------------\n");
+
+  // 枚举文件
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    g_enum_count = 0;
+  }
+  jk100_enum_recursive(path);
+
+  int32_t total = g_enum_count;
+  if (total == 0) {
+    printf("[警告] 目录为空或不存在: %s\n", path);
+    return 0;
+  }
+
+  printf("发现文件数: %d\n", total);
+  printf("开始扫描...\n\n");
+
+  int32_t scanned = 0, threats = 0, skipped = 0;
+
+  for (int32_t i = 0; i < total; i++) {
+    char* file_path = g_enum_files[i];
+    scanned++;
+
+    // 转小写用于匹配
+    char path_lower[MAX_PATH];
+    strncpy(path_lower, file_path, MAX_PATH - 1);
+    path_lower[MAX_PATH - 1] = 0;
+    to_lower(path_lower);
+
+    // 跳过白名单
+    if (is_whitelisted_path(path_lower)) {
+      skipped++;
+      continue;
+    }
+
+    // 跳过大文件 (>50MB)
+    WIN32_FILE_ATTRIBUTE_DATA fad;
+    if (GetFileAttributesExA(file_path, GetFileExInfoStandard, &fad)) {
+      LARGE_INTEGER size;
+      size.LowPart = fad.nFileSizeLow;
+      size.HighPart = fad.nFileSizeHigh;
+      if (size.QuadPart > 52428800LL) continue;
+    }
+
+    // 匹配规则
+    const char* matched = match_rogue_pattern(path_lower);
+    if (matched != NULL) {
+      threats++;
+      printf("[威胁] %s\n", file_path);
+      printf("  匹配规则: %s\n", matched);
+    }
+
+    // 每100个文件输出进度
+    if (scanned % 100 == 0) {
+      printf("[进度] 已扫描 %d / %d 文件\n", scanned, total);
+    }
+  }
+
+  // 释放枚举结果
+  if (g_enum_files) {
+    for (int i = 0; i < g_enum_count; i++) free(g_enum_files[i]);
+    free(g_enum_files);
+    g_enum_files = NULL;
+    g_enum_count = 0;
+    g_enum_cap = 0;
+  }
+
+  printf("\n========================================\n");
+  printf("扫描完成\n");
+  printf("  总文件数: %d\n", total);
+  printf("  已扫描:   %d\n", scanned);
+  printf("  白名单跳过: %d\n", skipped);
+  printf("  发现威胁: %d\n", threats);
+  printf("========================================\n");
+  return threats;
 }

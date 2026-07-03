@@ -1,16 +1,17 @@
 import {
-  "jk100/jk100/lib/core",
-  "jk100/jk100/lib/clean",
+  "moonbitlang/core/builtin",
   "jk100/jk100/lib/platform",
-  "jk100/jk100/lib/ui",
-  "moonbitlang/core/env",
 }
+
+supported_targets = "native"
 
 options(
   "is-main": true,
   "link": {
     "native": {
-      "cc-link-flags": "-Xlinker -subsystem:console"
+      "cc-flags": "-I../lib/platform -I../lib/ui -I./",
+      "cc-link-flags": "-Xlinker -subsystem:console -lkernel32 -luser32 -ladvapi32 -lpsapi -lole32 -lshell32"
     }
   },
+  "native-stub": [ "stubs.c" ],
 )

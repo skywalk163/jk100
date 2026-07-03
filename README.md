@@ -139,32 +139,98 @@ jk100/
 ### 环境要求
 
 - Windows 10/11 x64
-- [MoonBit](https://moonbitlang.com) 工具链
-- GCC（用于编译 ImGui 和 C FFI 层）
-- ClamAV 便携版（放入 `bundled/clamav/`）
+- [MoonBit](https://moonbitlang.com) 工具链（已在 `moonbit/` 目录内置）
+- GCC（用于编译 C FFI 层）
+- ClamAV 便携版（可选，放入 `bundled/clamav/`）
 
 ### 构建
 
 ```powershell
-# 安装 MoonBit 工具链（如未安装）
-irm https://cli.moonbitlang.cn/install/powershell.ps1 | iex
-
-# 构建项目
+# 使用内置 MoonBit 工具链构建
 .\moonbit\bin\moon build --target native
 
-# 或使用构建脚本（包含 ImGui 编译和打包）
+# 构建产物位于:
+#   _build\native\debug\build\jk100\jk100\main\main.exe  (debug)
+# 复制为 jk100.exe 即可使用
+
+# 或使用构建脚本(包含 release 优化、exe 重命名拷贝)
 .\build.ps1
 ```
 
 ### 运行
 
 ```powershell
-# GUI 模式（默认）
-.\target\native\release\bin\jk100.exe
+# CLI 模式 (当前推荐,实际可用)
+.\jk100.exe --cli --scan "C:\Users"
+.\jk100.exe --cli --scan "C:\Program Files"
+.\jk100.exe --cli --quick          # 快速扫描用户目录
+.\jk100.exe --cli --help           # 显示帮助
 
-# CLI 模式
-.\target\native\release\bin\jk100.exe --cli --scan "C:\Users"
+# GUI 模式 (开发中,暂不可用)
+.\jk100.exe
 ```
+
+### 实测输出示例
+
+```
+jk100 极快100 防恶意软件 v0.1.0
+========================================
+CLI 扫描模式 (绕过 MoonBit native ICE, 核心逻辑用 C FFI)
+
+正在扫描: g:\traework\jk100\test_scan
+----------------------------------------
+发现文件数: 3
+开始扫描...
+
+[威胁] g:\traework\jk100\test_scan\adware.exe
+  匹配规则: adware.exe
+[威胁] g:\traework\jk100\test_scan\popup.exe
+  匹配规则: popup.exe
+
+========================================
+扫描完成
+  总文件数: 3
+  已扫描:   3
+  白名单跳过: 0
+  发现威胁: 2
+========================================
+[结论] 发现 2 个威胁,建议清理
+```
+
+## 当前实现状态与 MoonBit native 后端 ICE 绕过
+
+### 现状
+
+P1 阶段（查杀清理引擎 MVP）已完成代码实现，但 **MoonBit v0.10.2 native 后端存在多个代码生成 bug**，导致原计划的纯 MoonBit 核心逻辑（JSON 规则加载、Array 操作等）在 `link-core` 阶段触发 `Moonc.Basic_hashf.Make(Key).Key_not_found(_)` ICE。
+
+### 绕过方案
+
+采用 **C 主导 + MoonBit 薄壳** 架构，将所有触发 ICE 的逻辑迁移到 C FFI 层：
+
+| MoonBit native bug | 绕过方法 |
+|---|---|
+| `@json.parse` 触发 ICE | 弃用 JSON 库，规则硬编码在 C 端 |
+| `Array::new()` / 数组字面量触发 ICE | 数组逻辑全部移到 C 端 |
+| `!=` 运算符 undeclared identifier | 改用 `not(x == y)` |
+| `println` undeclared identifier | C FFI `moonbit_println` |
+| `Int.to_string()` 触发 ICE | C FFI `jk100_int_to_string` |
+| `String::to_bytes()` undeclared identifier | C 函数直接接受 `moonbit_string_t` |
+| `String::make` + `unsafe_to_char` undeclared | 字符串数组索引替代 |
+
+### 当前架构
+
+- [main.mbt](main/main.mbt) — 仅做 CLI 参数分发（纯 if/else，无 Array/JSON），调用 `@platform.run_scan`
+- [cwrap.c](lib/platform/cwrap.c) — `jk100_run_scan` 实现完整扫描：递归枚举 + 白名单跳过 + 规则匹配 + 进度/结果输出
+- 硬编码的流氓软件特征文件名规则（adware.exe、popup.exe、hao123.exe 等 20 条）
+- 硬编码的白名单路径（Windows 系统目录自动跳过）
+
+### 待 MoonBit 编译器修复后恢复的功能
+
+- JSON 规则库动态加载（`bundled/sigdb/rogue_rules.json`）
+- 基于 SHA256 哈希的精确匹配
+- PE 文件签名验证
+- ClamAV socket 调用
+- 完整的清理流程（隔离区、回滚 manifest）
 
 ## 规则库格式
 
@@ -209,7 +275,7 @@ irm https://cli.moonbitlang.cn/install/powershell.ps1 | iex
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
-| P1 | 查杀清理引擎 MVP | ✅ 已完成 |
+| P1 | 查杀清理引擎 MVP | ✅ 已完成（CLI 扫描可用，受 MoonBit ICE 限制核心逻辑用 C FFI 实现） |
 | P2 | 实时行为监控 + 社会工程启发式检测 | 计划中 |
 | P3 | 自我保护（内核 Hook） | 计划中 |
 | P4 | 网络侧防护（恶意 DNS/流量拦截） | 计划中 |

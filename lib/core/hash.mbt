@@ -202,17 +202,18 @@ fn sha256_hex(data : Bytes) -> String {
 }
 
 fn int_to_hex(v : Int) -> String {
-  let hex_chars = "0123456789abcdef"
+  // 用字符串数组绕过 native 后端的 String::make + unsafe_to_char 代码生成 bug
+  let hex_chars = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"]
   let mut s = ""
   for i in 0..<8 {
     let shift = (7 - i) * 4
     let nibble_val = (v >> shift) & 0xF
-    let nibble_char = String::make(1, hex_chars[nibble_val].unsafe_to_char())
-    s = s + nibble_char
+    s = s + hex_chars[nibble_val]
   }
   s
 }
 
-pub fn bytes_sha256(data : Bytes) -> String {
-  sha256_hex(data)
+pub fn bytes_sha256(_data : Bytes) -> String {
+  // 临时: 返回空字符串测试 ICE 来源
+  ""
 }

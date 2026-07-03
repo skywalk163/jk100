@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <stdbool.h>
 #include <moonbit.h>
 
 static bool g_running = true;

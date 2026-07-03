@@ -1,8 +1,8 @@
 #borrow(_name)
-extern "c" fn jk100_stop_service(_name: Bytes) -> Int = "jk100_stop_service"
+extern "c" fn jk100_stop_service(_name: String) -> Int = "jk100_stop_service"
 
 #borrow(_name)
-extern "c" fn jk100_delete_service(_name: Bytes) -> Int = "jk100_delete_service"
+extern "c" fn jk100_delete_service(_name: String) -> Int = "jk100_delete_service"
 
 struct ServiceInfo {
   name : String
@@ -11,11 +11,9 @@ struct ServiceInfo {
 } derive(@debug.Debug)
 
 pub fn stop_service(name : String) -> Bool {
-  let c_name = name.to_bytes()
-  jk100_stop_service(c_name) == 0
+  jk100_stop_service(name) == 0
 }
 
 pub fn delete_service(name : String) -> Bool {
-  let c_name = name.to_bytes()
-  jk100_delete_service(c_name) == 0
+  jk100_delete_service(name) == 0
 }

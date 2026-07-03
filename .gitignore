@@ -1,0 +1,17 @@
+# MoonBit 构建产物
+_build/
+target/
+*.exe
+*.lib
+*.obj
+*.pdb
+
+# 临时构建日志
+build.log
+build_full.log
+
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo

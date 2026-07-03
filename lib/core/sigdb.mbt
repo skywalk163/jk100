@@ -13,6 +13,11 @@ pub fn load(rules_path : String, whitelist_path : String) -> SigDB raise {
   { rules, whitelist }
 }
 
+// 测试函数: 只读取文件,不做 JSON 解析
+pub fn test_read_file(path : String) -> String {
+  @platform.read_file_text(path)
+}
+
 fn load_rules(content : String) -> RogueRulesDB raise {
   let json = @json.parse(content)
   @json.from_json(json)

@@ -1,19 +1,19 @@
-enum ThreatType {
+pub enum ThreatType {
   Rogue
   Virus
 } derive(@debug.Debug)
 
-enum Severity {
+pub enum Severity {
   Rogue
   Suspicious
 } derive(@debug.Debug)
 
-enum DetectionSource {
+pub enum DetectionSource {
   Sigdb
   ClamAV
 } derive(@debug.Debug)
 
-struct Threat {
+pub struct Threat {
   threat_type : ThreatType
   severity : Severity
   source : DetectionSource
@@ -30,28 +30,28 @@ struct Threat {
   description : String
 } derive(@debug.Debug)
 
-enum ScanSpeed {
+pub enum ScanSpeed {
   Low
   Normal
   High
 } derive(@debug.Debug)
 
-enum ScanTarget {
+pub enum ScanTarget {
   QuickScan
   FullScan
   CustomScan(Array[String])
 } derive(@debug.Debug)
 
-struct ScanResult {
+pub struct ScanResult {
   threats : Array[Threat]
-  total_files : Int
-  scanned_files : Int
-  skipped_whitelist : Int
+  mut total_files : Int
+  mut scanned_files : Int
+  mut skipped_whitelist : Int
   errors : Int
   elapsed_ms : Int
 } derive(@debug.Debug)
 
-enum CleanOp {
+pub enum CleanOp {
   KillProcess(Int)
   DeleteRunKey(String, String)
   StopDeleteService(String)
@@ -60,31 +60,31 @@ enum CleanOp {
   FixHomepage(String)
 } derive(@debug.Debug)
 
-enum CleanMode {
+pub enum CleanMode {
   Classify
   OneClick
 } derive(@debug.Debug)
 
-struct CleanItem {
+pub struct CleanItem {
   op : CleanOp
   success : Bool
   message : String
 } derive(@debug.Debug)
 
-struct CleanResult {
+pub struct CleanResult {
   items : Array[CleanItem]
   pending_reboot : Bool
   scan_id : String
 } derive(@debug.Debug)
 
-struct WhitelistEntry {
+pub struct WhitelistEntry {
   signer : String
   hashes_sha256 : Array[String]
   paths : Array[String]
   reason : String
-} derive(@debug.Debug)
+} derive(@debug.Debug, @json.FromJson)
 
-struct RogueRule {
+pub struct RogueRule {
   id : String
   name : String
   severity : String
@@ -96,19 +96,19 @@ struct RogueRule {
   service_names : Array[String]
   homepage : String
   description : String
-} derive(@debug.Debug)
+} derive(@debug.Debug, @json.FromJson)
 
-struct RogueRulesDB {
+pub struct RogueRulesDB {
   version : String
   rules : Array[RogueRule]
-} derive(@debug.Debug)
+} derive(@debug.Debug, @json.FromJson)
 
-struct WhitelistDB {
+pub struct WhitelistDB {
   version : String
   entries : Array[WhitelistEntry]
-} derive(@debug.Debug)
+} derive(@debug.Debug, @json.FromJson)
 
-struct QuarantineItem {
+pub struct QuarantineItem {
   op_type : String
   source : String
   quarantine_path : String
@@ -117,7 +117,7 @@ struct QuarantineItem {
   status : String
 } derive(@debug.Debug)
 
-struct QuarantineManifest {
+pub struct QuarantineManifest {
   scan_id : String
   timestamp : String
   items : Array[QuarantineItem]
