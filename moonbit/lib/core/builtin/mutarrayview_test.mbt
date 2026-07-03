@@ -1,0 +1,547 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+test "array_mut_sub" {
+  let arr = [1, 2, 3, 4, 5]
+  let view = arr.mut_view()
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2, 3, 4, 5]>
+    ),
+  )
+  inspect(view.length(), content="5")
+  inspect(view[0], content="1")
+  inspect(view[4], content="5")
+  debug_inspect(
+    view[:],
+    content=(
+      #|<ArrayView: [1, 2, 3, 4, 5]>
+    ),
+  )
+  debug_inspect(
+    view[1:],
+    content=(
+      #|<ArrayView: [2, 3, 4, 5]>
+    ),
+  )
+  debug_inspect(
+    view[:-1],
+    content=(
+      #|<ArrayView: [1, 2, 3, 4]>
+    ),
+  )
+  debug_inspect(
+    view[1:-1],
+    content=(
+      #|<ArrayView: [2, 3, 4]>
+    ),
+  )
+  debug_inspect(
+    view[-1:],
+    content=(
+      #|<ArrayView: [5]>
+    ),
+  )
+  debug_inspect(
+    view[-1:-1],
+    content=(
+      #|<ArrayView: []>
+    ),
+  )
+}
+
+///|
+test "mutarrayview_get" {
+  let arr = [1, 2, 3, 4, 5]
+  let view = arr.mut_view(start=1, end=4)
+  inspect(view.length(), content="3")
+  inspect(view[0], content="2")
+  inspect(view[1], content="3")
+  inspect(view[2], content="4")
+}
+
+///|
+test "mutarrayview_set" {
+  let arr = [1, 2, 3, 4, 5]
+  let view = arr.mut_view(start=1, end=4)
+  view[0] = 10
+  view[1] = 20
+  view[2] = 30
+  inspect(view[0], content="10")
+  inspect(view[1], content="20")
+  inspect(view[2], content="30")
+  // Verify underlying array is modified
+  inspect(arr[1], content="10")
+  inspect(arr[2], content="20")
+  inspect(arr[3], content="30")
+}
+
+///|
+test "mutarrayview_helpers" {
+  let arr = [1, 2, 3, 4, 5]
+  let empty_view = arr.mut_view(start=2, end=2)
+  inspect(empty_view.is_empty(), content="true")
+  inspect(empty_view.start_offset(), content="2")
+  let view = arr.mut_view(start=1, end=4)
+  inspect(view.is_empty(), content="false")
+  inspect(view.start_offset(), content="1")
+  debug_inspect(view.to_owned(), content="[2, 3, 4]")
+  let values = []
+  view.iter().each(v => values.push(v))
+  debug_inspect(values, content="[2, 3, 4]")
+  let pairs = []
+  view.iter2().each((i, v) => pairs.push((i, v)))
+  debug_inspect(pairs, content="[(0, 2), (1, 3), (2, 4)]")
+}
+
+///|
+test "mutarrayview_as_mutarrayview" {
+  let arr = [1, 2, 3, 4, 5]
+  let view1 = arr.mut_view(start=1, end=4)
+  let view2 = view1.mut_view(start=1, end=2)
+  inspect(view2.length(), content="1")
+  inspect(view2[0], content="3")
+  view2[0] = 99
+  inspect(arr[2], content="99")
+  inspect(view1[1], content="99")
+}
+
+///|
+test "negative index1" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view(start=-1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [3]>
+    ),
+  )
+  let view = arr.mut_view(start=-2)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [2, 3]>
+    ),
+  )
+  let view = arr.mut_view(start=-3)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2, 3]>
+    ),
+  )
+  let view = arr.mut_view(end=-1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view = arr.mut_view(end=-2)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view = arr.mut_view(end=-3)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=-3)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=-2)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=-1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=0)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=2)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view = arr.mut_view(start=-3, end=3)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2, 3]>
+    ),
+  )
+}
+
+///|
+test "negative index2" {
+  let arr = [0, 1, 2, 3, 4]
+  let view = arr.mut_view(start=1, end=4)
+  let view2 = view.mut_view(start=-1)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [3]>
+    ),
+  )
+  let view2 = view.mut_view(start=-2)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [2, 3]>
+    ),
+  )
+  let view2 = view.mut_view(start=-3)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1, 2, 3]>
+    ),
+  )
+  let view2 = view.mut_view(end=-1)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view2 = view.mut_view(end=-2)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view2 = view.mut_view(end=-3)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=-3)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=-2)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=-1)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=0)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: []>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=1)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1]>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=2)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1, 2]>
+    ),
+  )
+  let view2 = view.mut_view(start=-3, end=3)
+  debug_inspect(
+    view2,
+    content=(
+      #|<MutArrayView: [1, 2, 3]>
+    ),
+  )
+}
+
+///|
+test "panic negative index1" {
+  let arr = [1, 2, 3]
+  let _ = arr.mut_view(start=-4)
+}
+
+///|
+test "panic negative index2" {
+  let arr = [1, 2, 3]
+  let _ = arr.mut_view(end=-4)
+}
+
+///|
+test "panic negative index3" {
+  let arr = [1, 2, 3]
+  let _ = arr.mut_view(start=-1, end=-2)
+}
+
+///|
+test "panic negative index4" {
+  let arr = [1, 2, 3]
+  let _ = arr.mut_view(start=-1, end=-3)
+}
+
+///|
+test "panic negative index5" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  let _ = view.mut_view(start=-4)
+}
+
+///|
+test "panic negative index6" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  let _ = view.mut_view(end=-4)
+}
+
+///|
+test "panic negative index7" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  let _ = view.mut_view(start=-1, end=-2)
+}
+
+///|
+test "panic negative index8" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  let _ = view.mut_view(start=-1, end=-3)
+}
+
+///|
+test "fixedarray_mut_sub" {
+  // scalar case
+  let arr = FixedArray::makei(10, i => i)
+  let view = arr.mut_view()
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]>
+    ),
+  )
+  let view = arr.mut_view(start=1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [1, 2, 3, 4, 5, 6, 7, 8, 9]>
+    ),
+  )
+  let view = arr.mut_view(end=-2)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [0, 1, 2, 3, 4, 5, 6, 7]>
+    ),
+  )
+  let view = arr.mut_view(start=3, end=-4)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [3, 4, 5]>
+    ),
+  )
+  let view = arr.mut_view(start=-5)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [5, 6, 7, 8, 9]>
+    ),
+  )
+
+  // Test mutation through view
+  let view = arr.mut_view(start=3, end=-4)
+  view[0] = 100
+  inspect(arr[3], content="100")
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [100, 4, 5]>
+    ),
+  )
+
+  // reference case
+  let arr = FixedArray::makei(10, i => (i, i))
+  let view = arr.mut_view()
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView:
+      #|  [
+      #|    (0, 0),
+      #|    (1, 1),
+      #|    (2, 2),
+      #|    (3, 3),
+      #|    (4, 4),
+      #|    (5, 5),
+      #|    (6, 6),
+      #|    (7, 7),
+      #|    (8, 8),
+      #|    (9, 9),
+      #|  ]>
+    ),
+  )
+  let view = arr.mut_view(start=1)
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView:
+      #|  [
+      #|    (1, 1),
+      #|    (2, 2),
+      #|    (3, 3),
+      #|    (4, 4),
+      #|    (5, 5),
+      #|    (6, 6),
+      #|    (7, 7),
+      #|    (8, 8),
+      #|    (9, 9),
+      #|  ]>
+    ),
+  )
+
+  // Test mutation
+  let view = arr.mut_view(start=3, end=-4)
+  view[0] = (100, 100)
+  debug_inspect(arr[3], content="(100, 100)")
+  debug_inspect(
+    view,
+    content=(
+      #|<MutArrayView: [(100, 100), (4, 4), (5, 5)]>
+    ),
+  )
+}
+
+///|
+test "iter" {
+  let arr = [1, 2, 3, 4, 5]
+  let iter = arr.iter().map(x => x * 2)
+  debug_inspect(iter.to_array(), content="[2, 4, 6, 8, 10]")
+}
+
+///|
+test "rev_iter" {
+  let arr = [1, 2, 3, 4, 5]
+  let iter = arr.rev_iter().map(x => x * 2)
+  debug_inspect(iter.to_array(), content="[10, 8, 6, 4, 2]")
+}
+
+///|
+test "iter2" {
+  let arr = [1, 2, 3, 4, 5]
+  let iter = arr.iter2()
+  debug_inspect(
+    iter.to_array(),
+    content=(
+      #|[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+    ),
+  )
+}
+
+///|
+test "panic MutArrayView index out of bounds" {
+  let arr = [1, 2]
+  let view = arr.mut_view()
+  let _ = view[2]
+}
+
+///|
+test "panic MutArrayView set out of bounds" {
+  let arr = [1, 2]
+  let view = arr.mut_view()
+  view[2] = 3
+}
+
+///|
+test "panic FixedArray mut_view invalid range" {
+  let arr : FixedArray[Int] = [1, 2, 3]
+  let _ = arr.mut_view(start=2, end=1)
+}
+
+///|
+test "panic MutArrayView sub invalid range" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  let _ = view[2:1]
+}
+
+///|
+test "MutArrayView iterators" {
+  let arr = [1, 2, 3]
+  let view = arr.mut_view()
+  debug_inspect(view.iter().to_array(), content="[1, 2, 3]")
+  debug_inspect(view.rev_iter().to_array(), content="[3, 2, 1]")
+  debug_inspect(
+    view.iter2().to_array(),
+    content=(
+      #|[(0, 1), (1, 2), (2, 3)]
+    ),
+  )
+}
+
+///|
+test "MutArrayView equality compare hash" {
+  let arr = [1, 2, 3]
+  let left = arr.mut_view()
+  let right = arr.mut_view()
+  inspect(left == right, content="true")
+  inspect(left.compare(right), content="0")
+  let hasher = Hasher(seed=0)
+  hasher.combine(left)
+  inspect(hasher.finalize() != 0, content="true")
+}

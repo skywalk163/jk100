@@ -1,0 +1,2070 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Creates an empty list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls : @list.List[Int] = @list.new()
+///   @debug.assert_eq(ls, @list.empty())
+/// }
+/// ```
+#alias(empty)
+#as_free_fn
+#as_free_fn(empty)
+#inline
+pub fn[A] List::new() -> List[A] {
+  Empty
+}
+
+///|
+/// Prepend an element to the list and create a new list.
+/// 
+/// This function constructs a new list with the given element as the head
+/// and the provided list as the tail.
+/// 
+/// A more familiar name of this function is `cons`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let tail = @list.from_array([2, 3, 4])
+///   let ls = @list.cons(1, tail)
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4]))
+/// }
+/// ```
+#as_free_fn
+#as_free_fn(construct, deprecated="Use cons instead")
+pub fn[A] List::cons(head : A, tail : List[A]) -> List[A] {
+  More(head, tail~)
+}
+
+///|
+/// Prepend an element to the front of the list.
+/// 
+/// Creates a new list with the given element added to the beginning.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([2, 3, 4]).prepend(1)
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4]))
+/// }
+/// ```
+#alias(add)
+pub fn[A] List::prepend(self : List[A], head : A) -> List[A] {
+  More(head, tail=self)
+}
+
+///|
+pub impl[A : Eq] Eq for List[A] with fn equal(self, other) -> Bool {
+  if physical_equal(self, other) {
+    return true
+  }
+  match (self, other) {
+    (Empty, Empty) => true
+    (More(x, tail=xs), More(y, tail=ys)) => x == y && xs == ys
+    _ => false
+  }
+}
+
+///|
+#deprecated("Use @debug.Debug instead of Show for debugging purposes. See https://github.com/moonbitlang/core/blob/main/debug/README.mbt.md")
+pub impl[A : Show] Show for List[A]
+
+///|
+/// Show implementation for List.
+/// Outputs the list in the format @list.from_array([element1, element2, ...]).
+pub impl[A : Show] Show for List[A] with fn output(xs, logger) {
+  logger.write_iter(xs.iter(), prefix="@list.from_array([", suffix="])")
+}
+
+///|
+/// ToJson implementation for List.
+/// Converts a list to a JSON array.
+pub impl[A : ToJson] ToJson for List[A] with fn to_json(self) {
+  let capacity = self.length()
+  guard capacity != 0 else { return [] }
+  let jsons = Array::new(capacity~)
+  for a in self {
+    jsons.push(a.to_json())
+  }
+  Json::array(jsons)
+}
+
+///|
+/// Convert a list to JSON.
+/// 
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3])
+///   let json = ls.to_json()
+///   @debug.debug_inspect(json, content="Array([Number(1), Number(2), Number(3)])")
+/// }
+/// ```
+pub fn[A : ToJson] List::to_json(self : List[A]) -> Json {
+  ToJson::to_json(self)
+}
+
+///|
+/// FromJson implementation for List.
+/// Parses a JSON array into a list.
+pub impl[A : @json.FromJson] @json.FromJson for List[A] with fn from_json(
+  json,
+  path,
+) {
+  guard json is Array(arr) else {
+    raise JsonDecodeError((path, "@list.from_json: expected array"))
+  }
+  for i = arr.length() - 1, list = Empty; i >= 0; {
+    continue i - 1, list.prepend(A::from_json(arr[i], path.add_index(i)))
+  } nobreak {
+    list
+  }
+}
+
+///|
+/// Parse JSON into a list.
+/// 
+/// Converts a JSON array into a list of the specified type.
+#as_free_fn
+pub fn[A : @json.FromJson] List::from_json(
+  json : Json,
+) -> List[A] raise @json.JsonDecodeError {
+  @json.from_json(json)
+}
+
+///|
+/// Convert array to list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4, 5]))
+/// }
+/// ```
+#as_free_fn
+#alias(of, deprecated="Use from_array instead")
+#as_free_fn(of, deprecated="Use from_array instead")
+pub fn[A] List::from_array(arr : ArrayView[A]) -> List[A] {
+  for i = arr.length() - 1, list = Empty; i >= 0; {
+    continue i - 1, More(arr[i], tail=list)
+  } nobreak {
+    list
+  }
+}
+
+///|
+/// Get the length of the list.
+pub fn[A] List::length(self : List[A]) -> Int {
+  for x = self, acc = 0 {
+    match (x, acc) {
+      (Empty, len) => break len
+      (More(_, tail=rest), acc) => continue rest, acc + 1
+    }
+  }
+}
+
+///|
+/// Iterates over the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let arr = []
+///   @list.from_array([1, 2, 3, 4, 5]).each(x => arr.push(x))
+///   @debug.assert_eq(arr, [1, 2, 3, 4, 5])
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::each(self : List[A], f : (A) -> Unit raise?) -> Unit raise? {
+  for x = self {
+    match x {
+      Empty => break
+      More(head, tail~) => {
+        f(head)
+        continue tail
+      }
+    }
+  }
+}
+
+///|
+/// Iterates over the list with index.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let arr = []
+///   @list.from_array([1, 2, 3, 4, 5]).eachi((i, x) => arr.push("(\{i},\{x})"))
+///   @debug.assert_eq(arr, ["(0,1)", "(1,2)", "(2,3)", "(3,4)", "(4,5)"])
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::eachi(
+  self : List[A],
+  f : (Int, A) -> Unit raise?,
+) -> Unit raise? {
+  for x = self, i = 0 {
+    match (x, i) {
+      (Empty, _) => break
+      (More(x, tail=xs), i) => {
+        f(i, x)
+        continue xs, i + 1
+      }
+    }
+  }
+}
+
+///|
+/// Maps the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).map(x => x * 2),
+///     @list.from_array([2, 4, 6, 8, 10]),
+///   )
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::map(self : List[A], f : (A) -> B raise?) -> List[B] raise? {
+  match self {
+    Empty => Empty
+    More(hd, tail~) => {
+      let dest = More(f(hd), tail=Empty)
+      for d = dest, t = tail {
+        match (d, t) {
+          (_, Empty) => break
+          (More(_) as dest, More(hd, tail~)) => {
+            dest.tail = More(f(hd), tail=Empty)
+            continue dest.tail, tail
+          }
+          // unreachable
+          (Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Maps the list with index.
+/// 
+/// Applies a function to each element and its index, creating a new list
+/// with the results.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([10, 20, 30])
+///   let result = ls.mapi((i, x) => x + i)
+///   @debug.assert_eq(result, @list.from_array([10, 21, 32]))
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::mapi(
+  self : List[A],
+  f : (Int, A) -> B raise?,
+) -> List[B] raise? {
+  match self {
+    Empty => Empty
+    More(hd, tail~) => {
+      let dest = More(f(0, hd), tail=Empty)
+      for i = 1, d = dest, t = tail {
+        match (i, d, t) {
+          (_, _, Empty) => break
+          (i, More(_) as dest, More(hd, tail~)) => {
+            dest.tail = More(f(i, hd), tail=Empty)
+            continue i + 1, dest.tail, tail
+          }
+          // unreachable
+          (_, Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Maps the list and reverses the result.
+///
+/// `list.rev_map(f)` is equivalent to `list.map(f).rev()` but more efficient.
+///
+/// # Example
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).rev_map(x => x * 2),
+///     @list.from_array([10, 8, 6, 4, 2]),
+///   )
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::rev_map(
+  self : List[A],
+  f : (A) -> B raise?,
+) -> List[B] raise? {
+  for a = Empty, b = self {
+    match (a, b) {
+      (acc, Empty) => break acc
+      (acc, More(x, tail=xs)) => continue More(f(x), tail=acc), xs
+    }
+  }
+}
+
+///|
+/// Convert list to array.
+/// 
+/// Creates a new array containing all elements from the list in the same order.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let arr = ls.to_array()
+///   @debug.assert_eq(arr, [1, 2, 3, 4, 5])
+/// }
+/// ```
+pub fn[A] List::to_array(self : List[A]) -> Array[A] {
+  [
+    for x in self => x
+  ]
+}
+
+///|
+/// Filter the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).filter(x => x % 2 == 0),
+///     @list.from_array([2, 4]),
+///   )
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::filter(
+  self : List[A],
+  f : (A) -> Bool raise?,
+) -> List[A] raise? {
+  for x = self {
+    match x {
+      Empty => break Empty
+      More(head, tail~) =>
+        if !f(head) {
+          continue tail
+        } else {
+          let dest = More(head, tail=Empty)
+          for d = dest, t = tail {
+            match (d, t) {
+              (_, Empty) => break
+              (More(_) as dest, More(hd, tail~)) =>
+                if f(hd) {
+                  dest.tail = More(hd, tail=Empty)
+                  continue dest.tail, tail
+                } else {
+                  continue dest, tail
+                }
+              (Empty, _) =>
+                // unreachable
+                panic()
+            }
+          }
+          break dest
+        }
+    }
+  }
+}
+
+///|
+/// Test if all elements of the list satisfy the predicate.
+/// 
+/// Returns `true` if every element satisfies the predicate, or if the list is empty.
+/// Returns `false` as soon as an element that doesn't satisfy the predicate is found.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([2, 4, 6, 8])
+///   @test.assert_eq(ls.all(x => x % 2 == 0), true)
+///   let ls2 = @list.from_array([2, 3, 6, 8])
+///   @test.assert_eq(ls2.all(x => x % 2 == 0), false)
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::all(self : List[A], f : (A) -> Bool raise?) -> Bool raise? {
+  for x = self {
+    match x {
+      Empty => break true
+      More(head, tail~) => if f(head) { continue tail } else { break false }
+    }
+  }
+}
+
+///|
+/// Test if any element of the list satisfies the predicate.
+/// 
+/// Returns `true` as soon as an element that satisfies the predicate is found.
+/// Returns `false` if no element satisfies the predicate, or if the list is empty.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 3, 5, 6])
+///   @test.assert_eq(ls.any(x => x % 2 == 0), true)
+///   let ls2 = @list.from_array([1, 3, 5, 7])
+///   @test.assert_eq(ls2.any(x => x % 2 == 0), false)
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::any(self : List[A], f : (A) -> Bool raise?) -> Bool raise? {
+  for x = self {
+    match x {
+      Empty => break false
+      More(head, tail~) => if f(head) { break true } else { continue tail }
+    }
+  }
+}
+
+///|
+/// Get first element of the list.
+#internal(unsafe, "Panic if the list is empty")
+#doc(hidden)
+pub fn[A] List::unsafe_head(self : List[A]) -> A {
+  match self {
+    Empty => abort("head of empty list")
+    More(head, tail=_) => head
+  }
+}
+
+///|
+/// Get the tail (all elements except the first) of the list.
+/// 
+/// **Warning**: This function panics if the list is empty.
+/// Use pattern matching or other safe methods for empty lists.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let tail = ls.unsafe_tail()
+///   @debug.assert_eq(tail, @list.from_array([2, 3, 4, 5]))
+/// }
+/// ```
+/// 
+/// # Panics
+/// 
+/// Panics if the list is empty.
+pub fn[A] List::unsafe_tail(self : List[A]) -> List[A] {
+  match self {
+    Empty => abort("tail of empty list")
+    More(_, tail~) => tail
+  }
+}
+
+///|
+/// Get first element of the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   assert_true(@list.from_array([1, 2, 3, 4, 5]).head() == Some(1))
+/// }
+/// ```
+pub fn[A] List::head(self : List[A]) -> A? {
+  match self {
+    Empty => None
+    More(head, tail=_) => Some(head)
+  }
+}
+
+///|
+/// Get the last element of the list.
+/// 
+/// **Warning**: This function panics if the list is empty.
+/// Use `last()` for a safe alternative that returns `Option`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   @test.assert_eq(ls.unsafe_last(), 5)
+/// }
+/// ```
+/// 
+/// # Panics
+/// 
+/// Panics if the list is empty.
+#internal(unsafe, "Panic if the list is empty")
+#doc(hidden)
+pub fn[A] List::unsafe_last(self : List[A]) -> A {
+  for x = self {
+    match x {
+      Empty => break abort("last of empty list")
+      More(head, tail=Empty) => break head
+      More(_, tail~) => continue tail
+    }
+  }
+}
+
+///|
+/// Last element of the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   assert_true(@list.from_array([1, 2, 3, 4, 5]).last() == Some(5))
+/// }
+/// ```
+pub fn[A] List::last(self : List[A]) -> A? {
+  for x = self {
+    match x {
+      Empty => break None
+      More(head, tail=Empty) => break Some(head)
+      More(_, tail~) => continue tail
+    }
+  }
+}
+
+///|
+/// Concatenate two lists.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5]).concat(
+///     @list.from_array([6, 7, 8, 9, 10]),
+///   )
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))
+/// }
+/// ```
+pub fn[A] List::concat(self : List[A], other : List[A]) -> List[A] {
+  match self {
+    Empty => other
+    More(hd, tail=Empty) => More(hd, tail=other)
+    More(hd, tail~) => {
+      let dest = More(hd, tail=Empty)
+      for d = dest, t = tail {
+        match (d, t) {
+          (More(_) as dest, Empty) => {
+            dest.tail = other
+            break
+          }
+          (More(_) as dest, More(head, tail~)) => {
+            dest.tail = More(head, tail=Empty)
+            continue dest.tail, tail
+          }
+          // unreachable
+          (Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Reverse the first list and concatenate it with the second.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5]).rev_concat(
+///     @list.from_array([6, 7, 8, 9, 10]),
+///   )
+///   @debug.assert_eq(ls, @list.from_array([5, 4, 3, 2, 1, 6, 7, 8, 9, 10]))
+/// }
+/// ```
+pub fn[A] List::rev_concat(self : List[A], other : List[A]) -> List[A] {
+  for a = self, b = other {
+    match (a, b) {
+      (Empty, other) => break other
+      (More(head, tail~), other) => continue tail, More(head, tail=other)
+    }
+  }
+}
+
+///|
+/// Reverse the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).rev(),
+///     @list.from_array([5, 4, 3, 2, 1]),
+///   )
+/// }
+/// ```
+pub fn[A] List::rev(self : List[A]) -> List[A] {
+  self.rev_concat(Empty)
+}
+
+///|
+/// Fold the list from left.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let r = @list.from_array([1, 2, 3, 4, 5]).fold(init=0, (acc, x) => acc + x)
+///   inspect(r, content="15")
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::fold(
+  self : List[A],
+  init~ : B,
+  f : (B, A) -> B raise?,
+) -> B raise? {
+  for x = self, acc = init {
+    match (x, acc) {
+      (Empty, acc) => break acc
+      (More(head, tail~), acc) => continue tail, f(acc, head)
+    }
+  }
+}
+
+///|
+/// Fold the list from left with index.
+/// 
+/// Similar to `fold`, but the accumulator function also receives the index
+/// of the current element.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([10, 20, 30])
+///   let result = ls.foldi(init=0, (i, acc, x) => acc + x * i)
+///   inspect(result, content="80") // 0*10 + 1*20 + 2*30 = 80
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::foldi(
+  self : List[A],
+  init~ : B,
+  f : (Int, B, A) -> B raise?,
+) -> B raise? {
+  for xs = self, i = 0, acc = init {
+    match xs {
+      Empty => break acc
+      More(x, tail=rest) => continue rest, i + 1, f(i, acc, x)
+    }
+  }
+}
+
+///|
+/// Zip two lists together into a list of tuples.
+/// 
+/// Combines elements from two lists pairwise. If the lists have different 
+/// lengths, the result will have the length of the shorter list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let r = @list.zip(
+///     @list.from_array([1, 2, 3, 4, 5]),
+///     @list.from_array([6, 7, 8, 9, 10]),
+///   )
+///   @debug.assert_eq(
+///     r,
+///     @list.from_array([(1, 6), (2, 7), (3, 8), (4, 9), (5, 10)]),
+///   )
+///   let r2 = @list.zip(
+///     @list.from_array([1, 2]),
+///     @list.from_array([6, 7, 8, 9, 10]),
+///   )
+///   @debug.assert_eq(r2, @list.from_array([(1, 6), (2, 7)]))
+/// }
+/// ```
+#as_free_fn
+pub fn[A, B] List::zip(self : List[A], other : List[B]) -> List[(A, B)] {
+  let res = for a = self, b = other, acc = Empty {
+    match (a, b, acc) {
+      (Empty, _, acc) => break acc
+      (_, Empty, acc) => break acc
+      (More(x, tail=xs), More(y, tail=ys), acc) =>
+        continue xs, ys, More((x, y), tail=acc)
+    }
+  }
+  res.reverse_in_place()
+}
+
+///|
+/// map over the list and concat all results.
+///
+/// `flat_map(f, ls)` equal to `ls.map(f).fold(Empty, (acc, x) => acc.concat(x))))`
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3])
+///   let r = ls.flat_map(x => @list.from_array([x, x * 2]))
+///   @debug.assert_eq(r, @list.from_array([1, 2, 2, 4, 3, 6]))
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::flat_map(
+  self : List[A],
+  f : (A) -> List[B] raise?,
+) -> List[B] raise? {
+  for x = self {
+    match x {
+      Empty => break Empty
+      More(head, tail~) =>
+        match f(head) {
+          // continue until we have at least one element
+          Empty => continue tail
+          More(hd, tail=tl) => {
+            let dest = More(hd, tail=Empty)
+            // copy all the elements of `f(head)` first
+            let dest1 = for d = dest, t = tl {
+              match (d, t) {
+                (dest, Empty) => break dest
+                (More(_) as dest, More(hd, tail~)) => {
+                  dest.tail = More(hd, tail=Empty)
+                  continue dest.tail, tail
+                }
+                (Empty, _) => panic()
+              }
+            }
+            // continue looping on the `tail` of `self`
+            loop_over_tail~: for d = dest1, t = tail {
+              match (d, t) {
+                (_, Empty) => break
+                (More(_) as dest, More(t_hd, tail=Empty)) => {
+                  dest.tail = f(t_hd)
+                  break
+                }
+                (dest, More(t_hd, tail=t_tl)) =>
+                  for d2 = dest, t2 = f(t_hd) {
+                    match (d2, t2) {
+                      (dest, Empty) => continue loop_over_tail~ dest, t_tl
+                      (More(_) as dest, More(hd, tail~)) => {
+                        dest.tail = More(hd, tail=Empty)
+                        continue dest.tail, tail
+                      }
+                      (Empty, _) => panic()
+                    }
+                  }
+              }
+            }
+            break dest
+          }
+        }
+    }
+  }
+}
+
+///|
+/// Map over the list and keep all `value`s for which the mapped result is `Some(value)`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([4, 2, 2, 6, 3, 1])
+///   let r = ls.filter_map(x => if x >= 3 { Some(x) } else { None })
+///   @debug.assert_eq(r, @list.from_array([4, 6, 3]))
+/// }
+/// ```
+#locals(f)
+pub fn[A, B] List::filter_map(
+  self : List[A],
+  f : (A) -> B? raise?,
+) -> List[B] raise? {
+  for x = self {
+    match x {
+      Empty => break Empty
+      More(hd, tail~) =>
+        match f(hd) {
+          None => continue tail
+          Some(head) => {
+            let dest = More(head, tail=Empty)
+            for d = dest, t = tail {
+              match (d, t) {
+                (_, Empty) => break
+                (More(_) as dest, More(hd, tail~)) =>
+                  match f(hd) {
+                    None => continue dest, tail
+                    Some(head) => {
+                      dest.tail = More(head, tail=Empty)
+                      continue dest.tail, tail
+                    }
+                  }
+                (Empty, _) => panic()
+              }
+            }
+            break dest
+          }
+        }
+    }
+  }
+}
+
+///|
+/// Get the nth element of the list.
+/// 
+/// **Warning**: This function panics if the index is out of bounds.
+/// Use `nth()` for a safe alternative that returns `Option`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   @test.assert_eq(ls.unsafe_nth(2), 3)
+/// }
+/// ```
+/// 
+/// # Panics
+/// 
+/// Panics if the index is out of bounds.
+#internal(unsafe, "Panic if the index is out of bounds")
+#doc(hidden)
+pub fn[A] List::unsafe_nth(self : List[A], n : Int) -> A {
+  for x = self, i = n {
+    match (x, i) {
+      (Empty, _) => break abort("nth: index out of bounds")
+      (More(head, tail=_), 0) => break head
+      (More(_, tail~), n) => continue tail, n - 1
+    }
+  }
+}
+
+///|
+/// Get the nth element of the list.
+/// 
+/// Returns `Some(element)` if the index is valid, or `None` if the index
+/// is out of bounds.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   assert_true(ls.nth(2) == Some(3))
+///   assert_true(ls.nth(10) == None)
+/// }
+/// ```
+pub fn[A] List::nth(self : List[A], n : Int) -> A? {
+  for x = self, i = n {
+    match (x, i) {
+      (Empty, _) => break None
+      (More(head, tail=_), 0) => break Some(head)
+      (More(_, tail~), n) => continue tail, n - 1
+    }
+  }
+}
+
+///|
+/// Create a list of length n with the given value.
+///
+/// Aborts if `n` is negative. When `n` is `0`, returns the empty list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(@list.repeat(5, 1), @list.from_array([1, 1, 1, 1, 1]))
+/// }
+/// ```
+#as_free_fn
+pub fn[A] List::repeat(n : Int, x : A) -> List[A] {
+  if n < 0 {
+    abort("negative repeat count")
+  }
+  for acc = Empty, i = n {
+    match (acc, i) {
+      (acc, n) =>
+        if n <= 0 {
+          break acc
+        } else {
+          continue More(x, tail=acc), n - 1
+        }
+    }
+  }
+}
+
+///|
+/// Insert separator to the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array(["1", "2", "3", "4", "5"]).intersperse("|")
+///   @debug.assert_eq(
+///     ls,
+///     @list.from_array(["1", "|", "2", "|", "3", "|", "4", "|", "5"]),
+///   )
+/// }
+/// ```
+pub fn[A] List::intersperse(self : List[A], separator : A) -> List[A] {
+  match self {
+    Empty => Empty
+    More(head, tail=Empty) => More(head, tail=Empty)
+    More(head, tail~) => {
+      let dest = More(head, tail=Empty)
+      for d = dest, t = tail {
+        match (d, t) {
+          (_, Empty) => break
+          (More(_) as dest, More(hd, tail=tl)) => {
+            let new_tail = More(hd, tail=Empty)
+            dest.tail = More(separator, tail=new_tail)
+            continue new_tail, tl
+          }
+          // unreachable
+          (Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Check if the list is empty.
+/// 
+/// Returns `true` if the list contains no elements, `false` otherwise.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let empty_list : @list.List[Int] = @list.empty()
+///   @test.assert_eq(empty_list.is_empty(), true)
+///   let non_empty = @list.from_array([1, 2, 3])
+///   @test.assert_eq(non_empty.is_empty(), false)
+/// }
+/// ```
+pub fn[A] List::is_empty(self : List[A]) -> Bool {
+  self is Empty
+}
+
+///|
+/// Unzip two lists.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let (a, b) = @list.from_array([(1, 2), (3, 4), (5, 6)]).unzip()
+///   @debug.assert_eq(a, @list.from_array([1, 3, 5]))
+///   @debug.assert_eq(b, @list.from_array([2, 4, 6]))
+/// }
+/// ```
+pub fn[A, B] List::unzip(self : List[(A, B)]) -> (List[A], List[B]) {
+  match self {
+    Empty => (Empty, Empty)
+    More((x, y), tail~) => {
+      let xs = More(x, tail=Empty)
+      let ys = More(y, tail=Empty)
+      for a = tail, b = xs, c = ys {
+        match (a, b, c) {
+          (Empty, _, _) => break
+          (More((x, y), tail~), More(_) as xptr, More(_) as yptr) => {
+            xptr.tail = More(x, tail=Empty)
+            yptr.tail = More(y, tail=Empty)
+            continue tail, xptr.tail, yptr.tail
+          }
+          (_, _, _) => break abort("unreachable")
+        }
+      }
+      (xs, ys)
+    }
+  }
+}
+
+///|
+/// flatten a list of lists.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([
+///     @list.from_array([1, 2, 3]),
+///     @list.from_array([4, 5, 6]),
+///     @list.from_array([7, 8, 9]),
+///   ]).flatten()
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4, 5, 6, 7, 8, 9]))
+/// }
+/// ```
+pub fn[A] List::flatten(self : List[List[A]]) -> List[A] {
+  for x = self {
+    match x {
+      Empty => break Empty
+      More(head, tail~) =>
+        match head {
+          // continue until we have at least one element
+          Empty => continue tail
+          More(hd, tail=tl) => {
+            let dest = More(hd, tail=Empty)
+            // copy all the elements of `head` first
+            let dest1 = for d = dest, t = tl {
+              match (d, t) {
+                (dest, Empty) => break dest
+                (More(_) as dest, More(hd, tail~)) => {
+                  dest.tail = More(hd, tail=Empty)
+                  continue dest.tail, tail
+                }
+                (Empty, _) => panic()
+              }
+            }
+            // continue looping on the `tail` of `self`
+            loop_over_tail~: for d = dest1, t = tail {
+              match (d, t) {
+                (_, Empty) => break
+                (More(_) as dest, More(t_hd, tail=Empty)) => {
+                  dest.tail = t_hd
+                  break
+                }
+                (dest, More(t_hd, tail=t_tl)) =>
+                  for d2 = dest, t2 = t_hd {
+                    match (d2, t2) {
+                      (dest, Empty) => continue loop_over_tail~ dest, t_tl
+                      (More(_) as dest, More(hd, tail~)) => {
+                        dest.tail = More(hd, tail=Empty)
+                        continue dest.tail, tail
+                      }
+                      (Empty, _) => panic()
+                    }
+                  }
+              }
+            }
+            break dest
+          }
+        }
+    }
+  }
+}
+
+///|
+/// Get the maximum element of the list.
+/// 
+/// **Warning**: This function panics if the list is empty.
+/// Use `maximum()` for a safe alternative that returns `Option`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 3, 2, 5, 4])
+///   @test.assert_eq(ls.unsafe_maximum(), 5)
+/// }
+/// ```
+/// 
+/// # Panics
+/// 
+/// Panics if the list is empty.
+#internal(unsafe, "Panic if the list is empty")
+#doc(hidden)
+pub fn[A : Compare] List::unsafe_maximum(self : List[A]) -> A {
+  match self {
+    Empty => abort("maximum: empty list")
+    More(head, tail~) =>
+      for a = tail, b = head {
+        match (a, b) {
+          (Empty, curr_max) => break curr_max
+          (More(item, tail~), curr_max) =>
+            continue tail, if item > curr_max { item } else { curr_max }
+        }
+      }
+  }
+}
+
+///|
+/// Get the maximum element of the list.
+///
+/// Returns `Some(element)` with the largest element, or `None` if the list is empty.
+/// Elements are compared using the `Compare` trait.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 3, 2, 5, 4])
+///   assert_true(ls.maximum() == Some(5))
+///   let empty : @list.List[Int] = @list.empty()
+///   assert_true(empty.maximum() == None)
+/// }
+/// ```
+pub fn[A : Compare] List::maximum(self : List[A]) -> A? {
+  match self {
+    Empty => None
+    More(head, tail~) =>
+      for a = tail, b = head {
+        match (a, b) {
+          (Empty, curr_max) => break Some(curr_max)
+          (More(item, tail~), curr_max) =>
+            continue tail, if item > curr_max { item } else { curr_max }
+        }
+      }
+  }
+}
+
+///|
+/// Get the minimum element of the list.
+///
+/// **Warning**: This function panics if the list is empty.
+/// Use `minimum()` for a safe alternative that returns `Option`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 3, 2, 5, 4])
+///   @test.assert_eq(ls.unsafe_minimum(), 1)
+/// }
+/// ```
+/// 
+/// # Panics
+/// 
+/// Panics if the list is empty.
+#internal(unsafe, "Panic if the list is empty")
+#doc(hidden)
+pub fn[A : Compare] List::unsafe_minimum(self : List[A]) -> A {
+  match self {
+    Empty => abort("minimum: empty list")
+    More(head, tail~) =>
+      for a = tail, b = head {
+        match (a, b) {
+          (Empty, curr_min) => break curr_min
+          (More(item, tail~), curr_min) =>
+            continue tail, if item < curr_min { item } else { curr_min }
+        }
+      }
+  }
+}
+
+///|
+/// Get the minimum element of the list.
+///
+/// Returns `Some(element)` with the smallest element, or `None` if the list is empty.
+/// Elements are compared using the `Compare` trait.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 3, 2, 5, 4])
+///   assert_true(ls.minimum() == Some(1))
+///   let empty : @list.List[Int] = @list.empty()
+///   assert_true(empty.minimum() == None)
+/// }
+/// ```
+pub fn[A : Compare] List::minimum(self : List[A]) -> A? {
+  match self {
+    Empty => None
+    More(head, tail~) =>
+      for a = tail, b = head {
+        match (a, b) {
+          (Empty, curr_min) => break Some(curr_min)
+          (More(item, tail~), curr_min) =>
+            continue tail, if item < curr_min { item } else { curr_min }
+        }
+      }
+  }
+}
+
+///|
+/// Sort the list in ascending order.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 123, 52, 3, 6, 0, -6, -76]).sort()
+///   @debug.assert_eq(ls, @list.from_array([-76, -6, 0, 1, 3, 6, 52, 123]))
+/// }
+/// ```
+pub fn[A : Compare] List::sort(self : List[A]) -> List[A] {
+  let arr = self.to_array()
+  arr.sort()
+  from_array(arr)
+}
+
+///|
+/// Add implementation for List - concatenates two lists.
+/// 
+/// The `+` operator for lists performs concatenation.
+/// `a + b` is equivalent to `a.concat(b)`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let a = @list.from_array([1, 2, 3])
+///   let b = @list.from_array([4, 5, 6])
+///   let result = a + b
+///   @debug.assert_eq(result, @list.from_array([1, 2, 3, 4, 5, 6]))
+/// }
+/// ```
+pub impl[A] Add for List[A] with fn add(self, other) {
+  self.concat(other)
+}
+
+///|
+/// Check if the list contains the specified value.
+/// 
+/// Returns `true` if any element in the list is equal to the given value,
+/// `false` otherwise.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   @test.assert_eq(ls.contains(3), true)
+///   @test.assert_eq(ls.contains(6), false)
+/// }
+/// ```
+pub fn[A : Eq] List::contains(self : List[A], value : A) -> Bool {
+  for cur = self {
+    match cur {
+      Empty => break false
+      More(x, tail=xs) => if x == value { break true } else { continue xs }
+    }
+  }
+}
+
+///|
+/// Produces a collection iteratively.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let r = @list.unfold(init=0, i => if i == 3 { None } else { Some((i, i + 1)) })
+///   @debug.assert_eq(r, @list.from_array([0, 1, 2]))
+/// }
+/// ```
+#as_free_fn
+#locals(f)
+pub fn[A, S] List::unfold(
+  f : (S) -> (A, S)? raise?,
+  init~ : S,
+) -> List[A] raise? {
+  match f(init) {
+    None => Empty
+    Some((element, new_state)) => {
+      let dest = More(element, tail=Empty)
+      for d = dest, t = f(new_state) {
+        match (d, t) {
+          (_, None) => break
+          (More(_) as dest, Some((element, new_state))) => {
+            dest.tail = More(element, tail=Empty)
+            continue dest.tail, f(new_state)
+          }
+          (Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Produces a list iteratively in reverse order.
+/// 
+/// Similar to `unfold`, but the resulting list will be in reverse order
+/// compared to the generation order. This can be more efficient when
+/// you don't need to preserve the generation order.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let r = @list.rev_unfold(
+///     i => if i == 3 { None } else { Some((i, i + 1)) },
+///     init=0,
+///   )
+///   @debug.assert_eq(r, @list.from_array([2, 1, 0]))
+/// }
+/// ```
+#as_free_fn
+#locals(f)
+pub fn[A, S] List::rev_unfold(
+  f : (S) -> (A, S)? raise?,
+  init~ : S,
+) -> List[A] raise? {
+  for a = f(init), b = Empty {
+    match (a, b) {
+      (None, acc) => break acc
+      (Some((x, s)), acc) => continue f(s), More(x, tail=acc)
+    }
+  }
+}
+
+///|
+/// Take first n elements of the list.
+/// If the list is shorter than n, return the whole list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let r = ls.take(3)
+///   @debug.assert_eq(r, @list.from_array([1, 2, 3]))
+/// }
+/// ```
+pub fn[A] List::take(self : List[A], n : Int) -> List[A] {
+  if n <= 0 {
+    Empty
+  } else {
+    match self {
+      Empty => Empty
+      More(head, tail~) => {
+        let dest = More(head, tail=Empty)
+        for d = dest, t = tail, i = n - 1 {
+          match (d, t, i) {
+            (_, Empty, _) => break
+            (_, _, 0) => break
+            (More(_) as dest, More(x, tail=xs), n) => {
+              dest.tail = More(x, tail=Empty)
+              continue dest.tail, xs, n - 1
+            }
+            (Empty, _, _) => panic()
+          }
+        }
+        dest
+      }
+    }
+  }
+}
+
+///|
+/// Drop first n elements of the list.
+/// If the list is shorter than n, return an empty list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let r = ls.drop(3)
+///   @debug.assert_eq(r, @list.from_array([4, 5]))
+/// }
+/// ```
+pub fn[A] List::drop(self : List[A], n : Int) -> List[A] {
+  if n <= 0 {
+    self
+  } else {
+    for a = n, b = self {
+      match (a, b) {
+        (_, Empty) => break Empty
+        (1, More(_, tail=xs)) => break xs
+        (n, More(_, tail=xs)) => continue n - 1, xs
+      }
+    }
+  }
+}
+
+///|
+/// Take the longest prefix of a list of elements that satisfies a given predicate.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4])
+///   let r = ls.take_while(x => x < 3)
+///   @debug.assert_eq(r, @list.from_array([1, 2]))
+/// }
+/// ```
+#locals(p)
+pub fn[A] List::take_while(
+  self : List[A],
+  p : (A) -> Bool raise?,
+) -> List[A] raise? {
+  match self {
+    Empty => Empty
+    More(head, tail~) =>
+      if p(head) {
+        let dest = More(head, tail=Empty)
+        for d = dest, t = tail {
+          match (d, t) {
+            (_, Empty) => break
+            (More(_) as dest, More(x, tail=xs)) if p(x) => {
+              dest.tail = More(x, tail=Empty)
+              continue dest.tail, xs
+            }
+            (More(_), _) => break
+            (Empty, _) => panic()
+          }
+        }
+        dest
+      } else {
+        Empty
+      }
+  }
+}
+
+///|
+/// Drop the longest prefix of a list of elements that satisfies a given predicate.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4])
+///   let r = ls.drop_while(x => x < 3)
+///   @debug.assert_eq(r, @list.from_array([3, 4]))
+/// }
+/// ```
+#locals(p)
+pub fn[A] List::drop_while(
+  self : List[A],
+  p : (A) -> Bool raise?,
+) -> List[A] raise? {
+  for cur = self {
+    match cur {
+      Empty => break Empty
+      More(x, tail=xs) =>
+        if p(x) {
+          continue xs
+        } else {
+          break More(x, tail=xs)
+        }
+    }
+  }
+}
+
+///|
+/// Fold a list and return a list of successive reduced values from the left
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let r = ls.scan_left((acc, x) => acc + x, init=0)
+///   @debug.assert_eq(r, @list.from_array([0, 1, 3, 6, 10, 15]))
+/// }
+/// ```
+#locals(f)
+pub fn[A, E] List::scan_left(
+  self : List[A],
+  f : (E, A) -> E raise?,
+  init~ : E,
+) -> List[E] raise? {
+  let dest = More(init, tail=Empty)
+  for d = dest, s = self, a = init {
+    match (d, s, a) {
+      (_, Empty, _) => break
+      (Empty, _, _) => panic()
+      (More(_) as dest, More(x, tail=xs), acc) => {
+        let next = f(acc, x)
+        dest.tail = More(next, tail=Empty)
+        continue dest.tail, xs, next
+      }
+    }
+  }
+  dest
+}
+
+///|
+/// Fold a list and return a list of successive reduced values from the right
+///
+/// Note that the order of parameters on the accumulating function are reversed.
+///
+/// # Example
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let r = ls.scan_right((acc, x) => acc + x, init=0)
+///   @debug.assert_eq(r, @list.from_array([15, 14, 12, 9, 5, 0]))
+/// }
+/// ```
+pub fn[A, B] List::scan_right(
+  self : List[A],
+  f : (B, A) -> B raise?,
+  init~ : B,
+) -> List[B] raise? {
+  self.rev().scan_left(f, init~).reverse_in_place()
+}
+
+///|
+/// Looks up a key in an association list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([(1, "a"), (2, "b"), (3, "c")])
+///   assert_true(ls.lookup(3) == Some("c"))
+/// }
+/// ```
+pub fn[A : Eq, B] List::lookup(self : List[(A, B)], v : A) -> B? {
+  for cur = self {
+    match cur {
+      Empty => break None
+      More((x, y), tail=xs) => if x == v { break Some(y) } else { continue xs }
+    }
+  }
+}
+
+///|
+/// Find the first element in the list that satisfies f.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   assert_true(
+///     @list.from_array([1, 3, 5, 8]).find(element => element % 2 == 0) == Some(8),
+///   )
+///   assert_true(
+///     @list.from_array([1, 3, 5]).find(element => element % 2 == 0) == None,
+///   )
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::find(self : List[A], f : (A) -> Bool raise?) -> A? raise? {
+  for cur = self {
+    match cur {
+      Empty => break None
+      More(element, tail=list) =>
+        if f(element) {
+          break Some(element)
+        } else {
+          continue list
+        }
+    }
+  }
+}
+
+///|
+/// Returns the index of the first element in the list that satisfies the
+/// predicate function, or `None` if no element satisfies the predicate.
+///
+/// Parameters:
+///
+/// * `self` : The input list to search through.
+/// * `f` : A function that takes an element of the list and returns a
+/// boolean indicating whether the element satisfies the search criteria.
+///
+/// Returns an `Option` containing the index of the first matching element, or
+/// `None` if no element matches.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   debug_inspect(ls.find_index(x => x % 2 == 0), content="Some(1)")
+///   debug_inspect(ls.find_index(x => x > 10), content="None")
+/// }
+/// ```
+///
+#locals(f)
+pub fn[A] List::find_index(
+  self : Self[A],
+  f : (A) -> Bool raise?,
+) -> Int? raise? {
+  for cur = self, idx = 0 {
+    match (cur, idx) {
+      (Empty, _) => break None
+      (More(element, tail=list), idx) =>
+        if f(element) {
+          break Some(idx)
+        } else {
+          continue list, idx + 1
+        }
+    }
+  }
+}
+
+///|
+/// Find the first element in the list that satisfies f and passes the index as an argument.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   assert_true(
+///     @list.from_array([1, 3, 5, 8]).findi((element, index) => {
+///       element % 2 == 0 && index == 3
+///     }) ==
+///     Some(8),
+///   )
+///   assert_true(
+///     @list.from_array([1, 3, 8, 5]).findi((element, index) => {
+///       element % 2 == 0 && index == 3
+///     }) ==
+///     None,
+///   )
+/// }
+/// ```
+#locals(f)
+pub fn[A] List::findi(self : List[A], f : (A, Int) -> Bool raise?) -> A? raise? {
+  for list = self, index = 0 {
+    match list {
+      Empty => break None
+      More(element, tail=list) =>
+        if f(element, index) {
+          break Some(element)
+        } else {
+          continue list, index + 1
+        }
+    }
+  }
+}
+
+///|
+/// Removes the element at the specified index in the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).remove_at(2),
+///     @list.from_array([1, 2, 4, 5]),
+///   )
+/// }
+/// ```
+pub fn[A] List::remove_at(self : List[A], index : Int) -> List[A] {
+  match (index, self) {
+    (_, Empty) => Empty
+    (_..<0, _) => self
+    (0, More(_, tail~)) => tail
+    (n, More(head, tail~)) => {
+      let dest = More(head, tail=Empty)
+      for d = dest, t = tail, i = n - 1 {
+        match (d, t, i) {
+          (_, Empty, _) => break
+          (More(_) as dest, More(_, tail~), 0) => {
+            dest.tail = tail
+            break
+          }
+          (More(_) as dest, More(x, tail=xs), n) => {
+            dest.tail = More(x, tail=Empty)
+            continue dest.tail, xs, n - 1
+          }
+          (Empty, _, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Removes the first occurrence of the specified element from the list, if it is present.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @debug.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).remove(3),
+///     @list.from_array([1, 2, 4, 5]),
+///   )
+/// }
+/// ```
+pub fn[A : Eq] List::remove(self : List[A], elem : A) -> List[A] {
+  match self {
+    Empty => Empty
+    More(head, tail~) if head == elem => tail
+    More(head, tail~) => {
+      let dest = More(head, tail~)
+      for d = dest, t = tail {
+        match (d, t) {
+          (_, Empty) => break
+          (More(_) as dest, More(x, tail=xs)) =>
+            if x == elem {
+              dest.tail = xs
+              break
+            } else {
+              dest.tail = More(x, tail=Empty)
+              continue dest.tail, xs
+            }
+          (Empty, _) => panic()
+        }
+      }
+      dest
+    }
+  }
+}
+
+///|
+/// Returns true if list starts with prefix.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @test.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).is_prefix(@list.from_array([1, 2, 3])),
+///     true,
+///   )
+/// }
+/// ```
+pub fn[A : Eq] List::is_prefix(self : List[A], prefix : List[A]) -> Bool {
+  for a = self, b = prefix {
+    match (a, b) {
+      (_, Empty) => break true
+      (Empty, More(_)) => break false
+      (More(h1, tail=t1), More(h2, tail=t2)) =>
+        if h1 == h2 {
+          continue t1, t2
+        } else {
+          break false
+        }
+    }
+  }
+}
+
+///|
+/// Returns true if list ends with suffix.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   @test.assert_eq(
+///     @list.from_array([1, 2, 3, 4, 5]).is_suffix(@list.from_array([3, 4, 5])),
+///     true,
+///   )
+/// }
+/// ```
+pub fn[A : Eq] List::is_suffix(self : List[A], suffix : List[A]) -> Bool {
+  self.rev().is_prefix(suffix.rev())
+}
+
+///|
+/// Insert separator lists between lists and flatten the result.
+/// 
+/// Similar to `intersperse`, but works with lists of lists. Inserts the
+/// separator list between each list in the input, then flattens everything
+/// into a single list.
+///
+/// # Example
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([
+///     @list.from_array([1, 2, 3]),
+///     @list.from_array([4, 5, 6]),
+///     @list.from_array([7, 8, 9]),
+///   ])
+///   let r = ls.intercalate(@list.from_array([0]))
+///   @debug.assert_eq(r, @list.from_array([1, 2, 3, 0, 4, 5, 6, 0, 7, 8, 9]))
+/// }
+/// ```
+pub fn[A] List::intercalate(self : List[List[A]], sep : List[A]) -> List[A] {
+  self.intersperse(sep).flatten()
+}
+
+///|
+/// Default implementation for List.
+/// 
+/// Returns an empty list as the default value.
+pub impl[X] Default for List[X] with fn default() {
+  Empty
+}
+
+///|
+/// Return the default value for a list (empty list).
+/// 
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls : @list.List[Int] = @list.default()
+///   @test.assert_eq(ls.is_empty(), true)
+/// }
+/// ```
+pub fn[X] default() -> List[X] {
+  Empty
+}
+
+///|
+/// Create an iterator over the list elements.
+/// 
+/// Returns an iterator that yields each element of the list in order.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([1, 2, 3, 4, 5])
+///   let iter = ls.iter()
+///   let sum = iter.fold(init=0, (acc, x) => acc + x)
+///   inspect(sum, content="15")
+/// }
+/// ```
+#alias(iterator, deprecated)
+pub fn[A] List::iter(self : List[A]) -> Iter[A] {
+  let mut next = self
+  Iter::new(fn() {
+    match next {
+      Empty => None
+      More(head, tail~) => {
+        next = tail
+        Some(head)
+      }
+    }
+  })
+}
+
+///|
+/// Create an iterator over the list elements with indices.
+/// 
+/// Returns an iterator that yields pairs of (index, element) for each
+/// element in the list.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.from_array([10, 20, 30])
+///   let iter = ls.iter2()
+///   debug_inspect(iter.to_array(), content="[(0, 10), (1, 20), (2, 30)]")
+/// }
+/// ```
+#alias(iterator2, deprecated)
+pub fn[A] List::iter2(self : List[A]) -> Iter2[Int, A] {
+  let mut i = 0
+  let mut next = self
+  Iter2::new(fn() {
+    match next {
+      Empty => None
+      More(head, tail~) => {
+        let result = (i, head)
+        next = tail
+        i += 1
+        Some(result)
+      }
+    }
+  })
+}
+
+///|
+/// Convert an iterator into a list, preserving order of elements.
+/// 
+/// Creates a list from an iterator, maintaining the same order as the iterator.
+/// If order is not important, consider using `from_iter_rev` for better performance.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let arr = [1, 2, 3, 4, 5]
+///   let iter = arr.iter()
+///   let ls = @list.from_iter(iter)
+///   @debug.assert_eq(ls, @list.from_array([1, 2, 3, 4, 5]))
+/// }
+/// ```
+#as_free_fn
+#alias(from_iterator, deprecated)
+#as_free_fn(from_iterator, deprecated)
+pub fn[A] List::from_iter(iter : Iter[A]) -> List[A] {
+  let mut head = Empty
+  let mut tail = Empty
+  while iter.next() is Some(x) {
+    match tail {
+      Empty => {
+        tail = More(x, tail~)
+        head = tail
+      }
+      More(_) as prev_tail => {
+        tail = More(x, tail=Empty)
+        prev_tail.tail = tail
+      }
+    }
+  }
+  head
+}
+
+///|
+/// Convert an iterator into a list in reverse order.
+/// 
+/// Creates a list from an iterator, but the resulting list will have elements
+/// in reverse order compared to the iterator. This is more efficient than
+/// `from_iterator` when order doesn't matter.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let arr = [1, 2, 3, 4, 5]
+///   let iter = arr.iter()
+///   let ls = @list.from_iter_rev(iter)
+///   @debug.assert_eq(ls, @list.from_array([5, 4, 3, 2, 1]))
+/// }
+/// ```
+#as_free_fn
+#alias(from_iterator_rev, deprecated)
+#as_free_fn(from_iterator_rev, deprecated)
+pub fn[A] List::from_iter_rev(iter : Iter[A]) -> List[A] {
+  iter.fold(init=Empty, (acc, e) => More(e, tail=acc))
+}
+
+///|
+/// Create a list from a FixedArray.
+/// 
+/// Converts a FixedArray into a list with the same elements in the same order.
+///
+/// # Example
+///
+/// ```mbt test
+/// let ls = @list.from_array([1, 2, 3, 4, 5])
+/// @debug.assert_eq(ls.to_array(), [1, 2, 3, 4, 5])
+/// ```
+
+///|
+/// Arbitrary implementation for quickcheck testing.
+/// 
+/// Generates random lists for property-based testing with quickcheck.
+pub impl[X : @quickcheck.Arbitrary] @quickcheck.Arbitrary for List[X] with fn arbitrary(
+  size,
+  rs,
+) {
+  @quickcheck.Arbitrary::arbitrary(size, rs) |> from_array
+}
+
+///|
+/// Create a list with a single element.
+/// 
+/// Returns a list containing only the given element.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let ls = @list.singleton(42)
+///   @debug.assert_eq(ls, @list.from_array([42]))
+///   @test.assert_eq(ls.length(), 1)
+/// }
+/// ```
+#as_free_fn
+pub fn[A] List::singleton(x : A) -> List[A] {
+  More(x, tail=Empty)
+}
+
+///|
+/// Hash implementation for List.
+/// 
+/// Computes the hash value for a list by combining the hash values
+/// of all its elements.
+pub impl[A : Hash] Hash for List[A] with fn hash_combine(self, hasher) {
+  for e in self {
+    hasher.combine(e)
+  }
+}
+
+///|
+/// Reverse a list in-place (internal function).
+/// 
+/// This is an internal helper function that efficiently reverses a list
+/// by modifying the existing structure rather than creating a completely new one.
+fn[A] List::reverse_in_place(self : List[A]) -> List[A] {
+  match self {
+    Empty | More(_, tail=Empty) => self
+    More(head, tail~) =>
+      for a = More(head, tail=Empty), b = tail {
+        match (a, b) {
+          (result, Empty) => break result
+          (result, More(_, tail=xs) as new_result) => {
+            new_result.tail = result
+            continue new_result, xs
+          }
+        }
+      }
+  }
+}
+
+///|
+/// Compares two lists based on lexicographic order.
+///
+/// First compares elements pairwise until a difference is found.
+/// If lists have different lengths and all shared elements are equal,
+/// the shorter list is considered less than the longer one.
+///
+/// Parameters:
+///
+/// * `self` : The first list to compare.
+/// * `other` : The second list to compare.
+///
+/// Returns an integer that indicates the relative order:
+///
+/// * A negative value if `self` is less than `other`
+/// * Zero if `self` equals `other`
+/// * A positive value if `self` is greater than `other`
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let list1 = @list.from_array([1, 2, 3])
+///   let list2 = @list.from_array([1, 2, 4])
+///   let list3 = @list.from_array([1, 2])
+///   inspect(list1.compare(list2), content="-1") // list1 < list2
+///   inspect(list1.compare(list3), content="1") // list1 > list3
+///   inspect(list3.compare(list1), content="-1") // list3 < list1 (shorter)
+///   inspect(list1.compare(list1), content="0") // list1 = list1
+/// }
+/// ```
+pub impl[A : Compare] Compare for List[A] with fn compare(self, other) {
+  for a = self, b = other {
+    match (a, b) {
+      (Empty, Empty) => break 0
+      (Empty, More(_, tail=_)) => break -1
+      (More(_, tail=_), Empty) => break 1
+      (More(x, tail=xs), More(y, tail=ys)) => {
+        let cmp = x.compare(y)
+        if cmp != 0 {
+          break cmp
+        } else {
+          continue xs, ys
+        }
+      }
+    }
+  }
+}

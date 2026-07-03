@@ -1,0 +1,1146 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// External iterator type.
+/// `Iterator[X]` is a mutable type: iterators internally maintain mutable state
+/// to advance iteration.
+/// All read operations on `Iterator` will advance the iterator,
+/// and would give different result when called multiple times.
+#alias(Iterator, deprecated="The name `Iterator` is deprecated, use `Iter` instead. Note that if you have defined `iterator()` method to support `for .. in` loop, you should also rename `iterator()` to `iter()`. See https://github.com/moonbitlang/core/pull/3127 for more details.")
+struct Iter[X] {
+  f : () -> X?
+  mut size_hint : Int?
+}
+
+///|
+priv enum IntersperseState[X] {
+  IntersperseInit
+  IntersperseElem(X)
+  IntersperseSep
+}
+
+///|
+/// Get the next element from an iterator, or return `None` if no more element exists.
+/// The returned element will be consumed from the iterator.
+/// Calling `next` repeatedly will iterate through all elements in the iterator.
+#alias(peek, deprecated)
+#alias(head)
+pub fn[X] Iter::next(self : Iter[X]) -> X? {
+  let result = (self.f)()
+  match (result, self.size_hint) {
+    (Some(_), Some(n)) =>
+      self.size_hint = if n > 0 { Some(n - 1) } else { Some(0) }
+    (None, _) => self.size_hint = Some(0)
+    _ => ()
+  }
+  result
+}
+
+///|
+/// Returns the hinted number of remaining elements if it is known.
+///
+/// The hint is intended to be exact for iterators produced by trusted
+/// collection APIs and adapters, but it must not be used for correctness.
+pub fn[X] Iter::size_hint(self : Iter[X]) -> Int? {
+  self.size_hint
+}
+
+///|
+/// Consume iterator elements while callback returns `IterContinue`.
+///
+/// Deprecated: prefer explicit loops.
+/// Function `run`.
+#locals(f)
+#deprecated("write a loop instead.")
+pub fn[X] Iter::run(self : Iter[X], f : (X) -> IterResult) -> IterResult {
+  while self.next() is Some(x) {
+    guard f(x) is IterContinue else { break IterEnd }
+  } nobreak {
+    IterContinue
+  }
+}
+
+///|
+/// Consume iterator elements and ignore final continuation state.
+///
+/// Deprecated: prefer explicit loops.
+/// Function `just_run`.
+#deprecated("write a loop instead.")
+pub fn[X] Iter::just_run(self : Iter[X], f : (X) -> IterResult) -> Unit {
+  while self.next() is Some(x) {
+    if f(x) is IterEnd {
+      break
+    }
+  }
+}
+
+///|
+#deprecated("Use Debug instead of Show for debugging purposes. See https://github.com/moonbitlang/core/blob/main/debug/README.mbt.md")
+pub impl[X : Show] Show for Iter[X]
+
+///|
+pub impl[X : Show] Show for Iter[X] with fn output(self, logger) {
+  logger.write_string("[")
+  if self.next() is Some(x) {
+    logger.write_object(x)
+    while self.next() is Some(x) {
+      logger.write_string(", ")
+      logger.write_object(x)
+    }
+  }
+  logger.write_string("]")
+}
+
+///|
+pub impl[X : ToJson] ToJson for Iter[X] with fn to_json(self) {
+  [
+    for x in self => x
+  ]
+}
+
+///|
+/// Iterates over each element in the iterator, applying the function `f` to each element.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// - `self`: The iterator to consume.
+/// - `f`: A function that takes an element of type `X` and returns `Unit`. This function is applied to each element of the iterator.
+#locals(f)
+pub fn[X] Iter::each(self : Iter[X], f : (X) -> Unit raise?) -> Unit raise? {
+  while self.next() is Some(x) {
+    f(x)
+  }
+}
+
+///|
+/// Return `true` if any element satisfies predicate `f`.
+/// Function `any`.
+#locals(f)
+pub fn[X] Iter::any(self : Iter[X], f : (X) -> Bool) -> Bool {
+  while self.next() is Some(x) {
+    if f(x) {
+      break true
+    }
+  } nobreak {
+    false
+  }
+}
+
+///|
+/// Return `true` if all elements satisfy predicate `f`.
+/// Function `all`.
+#locals(f)
+pub fn[X] Iter::all(self : Iter[X], f : (X) -> Bool) -> Bool {
+  while self.next() is Some(x) {
+    guard f(x) else { break false }
+  } nobreak {
+    true
+  }
+}
+
+///|
+/// Iterates over each element in the iterator, applying the function `f` to each element with index.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// - `self`: The iterator to consume.
+/// - `f`: A function that takes an index of type `Int` and an element of type `X` and returns `Unit`. This function is applied to each element of the iterator.
+#locals(f)
+pub fn[X] Iter::eachi(
+  self : Iter[X],
+  f : (Int, X) -> Unit raise?,
+) -> Unit raise? {
+  let mut i = 0
+  while self.next() is Some(x) {
+    f(i, x)
+    i += 1
+  }
+}
+
+///|
+/// Folds the elements of the iterator using the given function, starting with the given initial value.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+/// - `R`: The type of the accumulator (result) value.
+///
+/// # Arguments
+///
+/// - `self`: The iterator to consume.
+/// - `f`: A function that takes an accumulator of type `R` and an element of type `X`, and returns a new accumulator value.
+/// - `init`: The initial value for the fold operation.
+///
+/// # Returns
+///
+/// Returns the final accumulator value after folding all elements of the iterator.
+#locals(f)
+pub fn[X, R] Iter::fold(
+  self : Iter[X],
+  init~ : R,
+  f : (R, X) -> R raise?,
+) -> R raise? {
+  let mut acc = init
+  while self.next() is Some(x) {
+    acc = f(acc, x)
+  }
+  acc
+}
+
+///|
+/// Counts the number of elements in the iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// - `self`: The iterator to consume.
+///
+/// # Returns
+///
+/// Returns the number of elements in the iterator.
+#alias(length)
+pub fn[X] Iter::count(self : Iter[X]) -> Int {
+  for _ in self; count = 0 {
+    continue count + 1
+  } nobreak {
+    count
+  }
+}
+
+///|
+/// Counts the number of elements in the iterator that satisfy the predicate.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// - `self`: The iterator to consume.
+/// - `f`: A predicate function applied to each element.
+///
+/// # Returns
+///
+/// Returns the number of elements for which `f` returns `true`.
+#locals(f)
+pub fn[X] Iter::count_if(self : Iter[X], f : (X) -> Bool) -> Int {
+  for x in self; count = 0 {
+    if f(x) {
+      continue count + 1
+    }
+    continue count
+  } nobreak {
+    count
+  }
+}
+
+// Producers
+
+///|
+/// Create a new iterator by supplying a `next` function directly.
+/// The supplied function should output the next element being iterated
+/// everytime it is called.
+/// If the number of remaining elements is known, pass it as `size_hint`.
+///
+/// This function is intended for use by data structure authors,
+/// and should not be called by end users in general.
+pub fn[X] Iter::new(f : () -> X?, size_hint? : Int) -> Iter[X] {
+  let size_hint = match size_hint {
+    Some(n) if n > 0 => Some(n)
+    Some(_) => Some(0)
+    None => None
+  }
+  { f, size_hint }
+}
+
+///|
+/// Creates an empty iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Returns
+///
+/// Returns an empty iterator of type `Iter[X]`.
+pub fn[X] Iter::empty() -> Iter[X] {
+  Iter::new(() => None, size_hint=0)
+}
+
+///|
+/// Creates an iterator that contains a single element.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the element in the iterator.
+///
+/// # Arguments
+///
+/// - `elem`: The single element to be contained in the iterator.
+///
+/// # Returns
+///
+/// Returns an iterator of type `Iter[X]` that contains the single element `a`.
+pub fn[X] Iter::singleton(elem : X) -> Iter[X] {
+  let mut consumed = false
+  Iter::new(
+    fn() {
+      if consumed {
+        None
+      } else {
+        consumed = true
+        Some(elem)
+      }
+    },
+    size_hint=1,
+  )
+}
+
+///|
+/// Creates an iterator that repeats the given element indefinitely.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// - `x`: The element to be repeated.
+///
+/// # Returns
+///
+/// Returns an iterator of type `Iter[X]` that repeats the element `x` indefinitely.
+pub fn[X] Iter::repeat(x : X) -> Iter[X] {
+  Iter::new(() => Some(x))
+}
+
+///|
+/// Filters the elements of the iterator based on a predicate function.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The predicate function that determines whether an element should be included in the filtered iterator.
+///
+/// # Returns
+///
+/// A new iterator that only contains the elements for which the predicate function returns `IterContinue`.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `filter`.
+pub fn[X] Iter::filter(self : Iter[X], f : (X) -> Bool) -> Iter[X] {
+  Iter::new(fn() {
+    while self.next() is Some(x) {
+      if f(x) {
+        break Some(x)
+      }
+    } nobreak {
+      None
+    }
+  })
+}
+
+///|
+/// Transforms the elements of the iterator using a mapping function.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+/// - `Y`: The type of the transformed elements.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The mapping function that transforms each element of the iterator.
+///
+/// # Returns
+///
+/// A new iterator that contains the transformed elements.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `map`.
+pub fn[X, Y] Iter::map(self : Iter[X], f : (X) -> Y) -> Iter[Y] {
+  {
+    f: fn() {
+      match self.next() {
+        Some(x) => Some(f(x))
+        None => None
+      }
+    },
+    size_hint: self.size_hint,
+  }
+}
+
+///|
+/// Transforms the elements of the iterator using a mapping function.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+/// - `Y`: The type of the transformed elements.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The mapping function that transforms each element of the iterator with index.
+///
+/// # Returns
+///
+/// A new iterator that contains the transformed elements.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `mapi`.
+pub fn[X, Y] Iter::mapi(self : Iter[X], f : (Int, X) -> Y) -> Iter[Y] {
+  let mut i = 0
+  {
+    f: fn() {
+      match self.next() {
+        Some(x) => {
+          let result = f(i, x)
+          i += 1
+          Some(result)
+        }
+        None => None
+      }
+    },
+    size_hint: self.size_hint,
+  }
+}
+
+///|
+/// Transforms the elements of the iterator using a mapping function that returns an `Option`.
+/// The elements for which the function returns `None` are filtered out.
+///
+/// The old iterator `self` must not be used again after calling `filter_map`.
+pub fn[X, Y] Iter::filter_map(self : Iter[X], f : (X) -> Y?) -> Iter[Y] {
+  Iter::new(fn() {
+    while self.next() is Some(x) {
+      match f(x) {
+        Some(_) as y => break y
+        None => ()
+      }
+    } nobreak {
+      None
+    }
+  })
+}
+
+///|
+/// Transforms each element of the iterator into an iterator and flattens the resulting iterators into a single iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+/// - `Y`: The type of the transformed elements.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The function that transforms each element of the iterator into an iterator.
+///
+/// # Returns
+///
+/// A new iterator that contains the flattened elements.
+///
+/// # Note
+/// The old iterator `self` and the iterators returned by `f`
+/// must not be used again after calling `flat_map`.
+pub fn[X, Y] Iter::flat_map(self : Iter[X], f : (X) -> Iter[Y]) -> Iter[Y] {
+  let mut current_iter = Some(Iter::empty())
+  Iter::new(fn() {
+    guard current_iter is Some(iter) else { None }
+    for x = iter.next() {
+      match x {
+        Some(_) as elem => break elem
+        None => {
+          guard self.next() is Some(x) else { break None }
+          let iter = f(x)
+          current_iter = Some(iter)
+          continue iter.next()
+        }
+      }
+    }
+  })
+}
+
+///|
+/// `iter.map(f).flatten() == iter.flat_map(f)`
+pub fn[X] Iter::flatten(self : Iter[Iter[X]]) -> Iter[X] {
+  self.flat_map(it => it)
+}
+
+///|
+/// Collects the string-renderable elements of the iterator into a single
+/// string, separated by `sep`.
+/// The old iterator `self` must not be used again after calling `join`.
+pub fn[A : ToStringView] Iter::join(self : Iter[A], sep : StringView) -> String {
+  let result = StringBuilder()
+  if self.next() is Some(x) {
+    result.write_view(x.to_string_view())
+    while self.next() is Some(x) {
+      result.write_view(sep)
+      result.write_view(x.to_string_view())
+    }
+  }
+  result.to_string()
+}
+
+///|
+/// Applies a function to each element of the iterator without modifying the iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The function to apply to each element of the iterator.
+///
+/// # Returns
+///
+/// The same iterator.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `tap`.
+pub fn[X] Iter::tap(self : Iter[X], f : (X) -> Unit) -> Iter[X] {
+  {
+    f: fn() {
+      let result = self.next()
+      if result is Some(x) {
+        f(x)
+      }
+      result
+    },
+    size_hint: self.size_hint,
+  }
+}
+
+///|
+/// Takes the first `n` elements from the iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `n` - The number of elements to take.
+///
+/// # Returns
+///
+/// A new iterator that contains the first `n` elements.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `take`.
+pub fn[X] Iter::take(self : Iter[X], n : Int) -> Iter[X] {
+  let mut remaining = n
+  let size_hint = match self.size_hint {
+    Some(_) if n <= 0 => Some(0)
+    Some(len) if n < len => Some(n)
+    Some(len) => Some(len)
+    None if n <= 0 => Some(0)
+    None => None
+  }
+  {
+    f: fn() {
+      guard remaining > 0 else { None }
+      let result = self.next()
+      if result is Some(_) {
+        remaining -= 1
+      }
+      result
+    },
+    size_hint,
+  }
+}
+
+///|
+/// Takes elements from the iterator as long as the predicate function returns `true`.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The predicate function that determines whether an element should be taken.
+///
+/// # Returns
+///
+/// A new iterator that contains the elements as long as the predicate function returns `true`.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `take_while`.
+pub fn[X] Iter::take_while(self : Iter[X], f : (X) -> Bool) -> Iter[X] {
+  let mut still_running = true
+  Iter::new(fn() {
+    guard still_running else { None }
+    let result = self.next()
+    if result is Some(x) && !f(x) {
+      still_running = false
+      None
+    } else {
+      result
+    }
+  })
+}
+
+///|
+/// Transforms the elements of the iterator using a mapping function upto the function returns `None`.
+/// The old iterator `self` must not be used again after calling `map_while`.
+pub fn[X, Y] Iter::map_while(self : Iter[X], f : (X) -> Y?) -> Iter[Y] {
+  let mut still_running = true
+  Iter::new(fn() {
+    guard still_running else { None }
+    let src = self.next()
+    guard src is Some(x) else { None }
+    let result = f(x)
+    if result is None {
+      still_running = false
+    }
+    result
+  })
+}
+
+///|
+/// Skips the first `n` elements from the iterator.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `n` - The number of elements to skip.
+///
+/// # Returns
+///
+/// A new iterator that starts after skipping the first `n` elements.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `drop`.
+pub fn[X] Iter::drop(self : Iter[X], n : Int) -> Iter[X] {
+  let mut remaining = n
+  let size_hint = match self.size_hint {
+    Some(len) if n <= 0 => Some(len)
+    Some(len) if n < len => Some(len - n)
+    Some(_) => Some(0)
+    None => None
+  }
+  {
+    f: fn() {
+      while remaining > 0 {
+        guard self.next() is Some(_) else { break None }
+        remaining -= 1
+      } nobreak {
+        self.next()
+      }
+    },
+    size_hint,
+  }
+}
+
+///|
+/// Skips elements from the iterator as long as the predicate function returns `true`.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The predicate function that determines whether an element should be skipped.
+///
+/// # Returns
+///
+/// A new iterator that starts after skipping the elements as long as the predicate function returns `true`.
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `drop_while`.
+pub fn[X] Iter::drop_while(self : Iter[X], f : (X) -> Bool) -> Iter[X] {
+  let mut dropped = false
+  Iter::new(fn() {
+    if !dropped {
+      dropped = true
+      for x = self.next() {
+        match x {
+          Some(x) if f(x) => continue self.next()
+          result => break result
+        }
+      }
+    } else {
+      self.next()
+    }
+  })
+}
+
+///|
+/// Finds the first element in the iterator that satisfies the predicate function.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterator.
+///
+/// # Arguments
+///
+/// * `self` - The input iterator.
+/// * `f` - The predicate function that determines whether an element is the first element to be found.
+///
+/// # Returns
+///
+/// An `Option` that contains the first element that satisfies the predicate function, or `None` if no such element is found.
+///
+/// # Note
+/// The iterator `self` will advance past the returned element.
+pub fn[X] Iter::find_first(self : Iter[X], f : (X) -> Bool) -> X? {
+  while self.next() is Some(x) {
+    if f(x) {
+      break Some(x)
+    }
+  } nobreak {
+    None
+  }
+}
+
+///|
+/// Combines two iterators into one by appending the elements of the second iterator to the first.
+///
+/// # Type Parameters
+///
+/// - `X`: The type of the elements in the iterators.
+///
+/// # Arguments
+///
+/// * `self` - The first input iterator.
+/// * `other` - The second input iterator to be appended to the first.
+///
+/// # Returns
+///
+/// Returns a new iterator that contains the elements of `self` followed by the elements of `other`.
+///
+/// # Note
+/// The old iterator `self` and `other` must not be used again after calling `tap`.
+pub fn[X] Iter::concat(self : Iter[X], other : Iter[X]) -> Iter[X] {
+  let mut in_first = true
+  let size_hint = match (self.size_hint, other.size_hint) {
+    (Some(n), Some(m)) => Some(n + m)
+    _ => None
+  }
+  {
+    f: fn() {
+      if in_first {
+        let result = self.next()
+        if result is None {
+          in_first = false
+          other.next()
+        } else {
+          result
+        }
+      } else {
+        other.next()
+      }
+    },
+    size_hint,
+  }
+}
+
+///|
+/// Combines two iterators element-wise into an iterator of pairs.
+///
+/// The resulting iterator stops as soon as either input iterator is exhausted.
+///
+/// # Type Parameters
+///
+/// - `X`: The element type of `self`.
+/// - `Y`: The element type of `other`.
+///
+/// # Arguments
+///
+/// * `self` - The first input iterator.
+/// * `other` - The second input iterator.
+///
+/// # Returns
+///
+/// Returns a new iterator yielding tuples `(x, y)` where `x` comes from `self`
+/// and `y` comes from `other`.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let numbers = (1).until(5)
+///   let letters = ["a", "b", "c"].iter()
+///   debug_inspect(
+///     numbers.zip(letters).collect(),
+///     content="[(1, \"a\"), (2, \"b\"), (3, \"c\")]",
+///   )
+/// }
+/// ```
+///
+/// # Note
+/// The old iterators `self` and `other` must not be used again after calling `zip`.
+#alias(combine)
+pub fn[X, Y] Iter::zip(self : Iter[X], other : Iter[Y]) -> Iter[(X, Y)] {
+  let size_hint = match (self.size_hint, other.size_hint) {
+    (Some(n), Some(m)) if n < m => Some(n)
+    (Some(_), Some(m)) => Some(m)
+    (Some(0), _) => Some(0)
+    (_, Some(0)) => Some(0)
+    _ => None
+  }
+  {
+    f: fn() {
+      guard self.next() is Some(x) else { None }
+      guard other.next() is Some(y) else { None }
+      Some((x, y))
+    },
+    size_hint,
+  }
+}
+
+///|
+pub impl[T] Add for Iter[T] with fn add(self, other) {
+  self.concat(other)
+}
+
+///|
+/// Collects the elements of the iterator into an array.
+/// The old iterator `self` must not be used again.
+#alias(collect)
+pub fn[X] Iter::to_array(self : Iter[X]) -> Array[X] {
+  let result = match self.size_hint {
+    Some(n) => Array::new(capacity=n)
+    None => []
+  }
+  while self.next() is Some(x) {
+    result.push(x)
+  }
+  result
+}
+
+///|
+/// Return this iterator itself.
+/// Return an iterator via `iter`.
+#alias(iterator)
+pub fn[X] Iter::iter(self : Iter[X]) -> Iter[X] {
+  self
+}
+
+///|
+/// Return an indexed view of this iterator.
+/// Return an iterator via `iter2`.
+#alias(iterator2)
+pub fn[X] Iter::iter2(self : Iter[X]) -> Iter2[Int, X] {
+  let mut i = 0
+  Iter2({
+    f: () => {
+      guard self.next() is Some(elem) else { None }
+      let result = Some((i, elem))
+      i += 1
+      result
+    },
+    size_hint: self.size_hint,
+  })
+}
+
+///|
+/// Returns the last element of the iterator, or `None` if the iterator is empty.
+/// The old iterator `self` must not be used again after calling `last`.
+pub fn[X] Iter::last(self : Iter[X]) -> X? {
+  for x = (None : X?), y = self.next() {
+    match (x, y) {
+      (last, None) => break last
+      (_, Some(_) as x) => continue x, self.next()
+    }
+  }
+}
+
+///|
+/// Inserts a separator element `sep` between each element of the iterator.
+///
+/// # Parameters
+///
+/// - `self` : The iterator to intersperse the separator into.
+/// - `sep` : The separator element to insert between each element of the iterator.
+///
+/// # Examples
+///
+/// ```mbt check
+/// test {
+///   let arr = []
+///   [1, 2, 3].iter().intersperse(0).each(i => arr.push(i))
+///   @test.assert_eq(arr, [1, 0, 2, 0, 3])
+/// }
+/// ```
+///
+/// # Note
+/// The old iterator `self` must not be used again after calling `intersperse`.
+pub fn[X] Iter::intersperse(self : Iter[X], sep : X) -> Iter[X] {
+  let mut state : IntersperseState[X] = IntersperseInit
+  let size_hint = match self.size_hint {
+    Some(0) => Some(0)
+    Some(n) => Some(n * 2 - 1)
+    None => None
+  }
+  {
+    f: fn() {
+      match state {
+        IntersperseInit => {
+          let result = self.next()
+          state = IntersperseSep
+          result
+        }
+        IntersperseElem(x) => {
+          state = IntersperseSep
+          Some(x)
+        }
+        IntersperseSep =>
+          // make sure we only output the separator when there is remaining element
+          match self.next() {
+            Some(x) => {
+              state = IntersperseElem(x)
+              Some(sep)
+            }
+            None => None
+          }
+      }
+    },
+    size_hint,
+  }
+}
+
+///|
+/// Return a sliced iterator view in range `[start, end)`.
+/// Function `view`.
+#alias("_[_:_]")
+#alias(sub, deprecated="Use _[_:_] instead")
+pub fn[X] Iter::view(self : Iter[X], start? : Int = 0, end? : Int) -> Iter[X] {
+  match (start, end) {
+    (_..=0, None) => self
+    (_..=0, Some(end)) => self.take(end)
+    (start, None) => self.drop(start)
+    (start, Some(end)) => {
+      let mut index = 0
+      let size_hint = match self.size_hint {
+        Some(_) if end <= start => Some(0)
+        Some(len) if start >= len => Some(0)
+        Some(len) if end < len => Some(end - start)
+        Some(len) => Some(len - start)
+        None if end <= start => Some(0)
+        None => None
+      }
+      {
+        f: fn() {
+          if index >= end {
+            return None
+          }
+          while index < start {
+            guard self.next() is Some(_) else { return None }
+            index += 1
+          }
+          if index >= end {
+            return None
+          }
+          let result = self.next()
+          if result is Some(_) {
+            index += 1
+          }
+          result
+        },
+        size_hint,
+      }
+    }
+  }
+}
+
+///|
+/// Checks if the iterator contains an element equal to the given value.
+///
+/// Parameters:
+///
+/// * `self` : The iterator to search in.
+/// * `value` : The value to search for.
+///
+/// Returns `true` if the iterator contains an element equal to the given value,
+/// `false` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let iter = [1, 2, 3, 4, 5].iter()
+///   inspect(iter.contains(3), content="true")
+///   inspect(iter.contains(6), content="false")
+///   let iter = Iter::empty()
+///   inspect(iter.contains(1), content="false")
+/// }
+/// ```
+///
+/// # Note
+/// The old iterator `self` will advance past the searched element.
+pub fn[X : Eq] Iter::contains(self : Iter[X], value : X) -> Bool {
+  while self.next() is Some(x) {
+    if x == value {
+      break true
+    }
+  } nobreak {
+    false
+  }
+}
+
+///|
+/// Returns the nth element of the iterator, or `None` if the iterator is
+/// shorter than `n` elements.
+/// The iterator `self` will advance past the returned element.
+pub fn[X] Iter::nth(self : Iter[X], n : Int) -> X? {
+  guard n >= 0 else { None }
+  for _ in 0..<n {
+    guard self.next() is Some(_) else { break None }
+  } nobreak {
+    self.next()
+  }
+}
+
+///|
+/// Return the maximum element, or `None` if empty.
+pub fn[X : Compare] Iter::maximum(self : Iter[X]) -> X? {
+  guard self.next() is Some(x) else { return None }
+  let mut res = x
+  while self.next() is Some(x) {
+    if x > res {
+      res = x
+    }
+  }
+  Some(res)
+}
+
+///|
+/// Return the minimum element, or `None` if empty.
+pub fn[X : Compare] Iter::minimum(self : Iter[X]) -> X? {
+  guard self.next() is Some(x) else { return None }
+  let mut res = x
+  while self.next() is Some(x) {
+    if x < res {
+      res = x
+    }
+  }
+  Some(res)
+}
+
+///|
+/// This type is used for `for _, _ in ..` loop
+/// (`for .. in` loop with two loop variables),
+/// and should not be used directly in general.
+#alias(Iterator2, deprecated="The name `Iterator2` is deprecated, use `Iter2` instead. Note that if you have defined `iterator2()` method to support `for .. in` loop, you should also rename `iterator2()` to `iter2()`. See https://github.com/moonbitlang/core/pull/3127 for more details.")
+pub(all) struct Iter2[X, Y](Iter[(X, Y)])
+
+///|
+/// Construct an `Iter2` from a pair-producing function.
+/// If the number of remaining pairs is known, pass it as `size_hint`.
+pub fn[X, Y] Iter2::new(f : () -> (X, Y)?, size_hint? : Int) -> Iter2[X, Y] {
+  let size_hint = match size_hint {
+    Some(n) if n > 0 => Some(n)
+    Some(_) => Some(0)
+    None => None
+  }
+  Iter2({ f, size_hint })
+}
+
+///|
+/// Convert to plain iterator of pairs.
+/// Return an iterator via `iter`.
+#alias(iterator)
+pub fn[X, Y] Iter2::iter(self : Iter2[X, Y]) -> Iter[(X, Y)] {
+  self.0
+}
+
+///|
+/// Return this two-variable iterator itself.
+/// Return an iterator via `iter2`.
+#alias(iterator2)
+pub fn[X, Y] Iter2::iter2(self : Iter2[X, Y]) -> Iter2[X, Y] {
+  self
+}
+
+///|
+/// Get the next pair from the iterator.
+pub fn[X, Y] Iter2::next(self : Iter2[X, Y]) -> (X, Y)? {
+  self.0.next()
+}
+
+///|
+#deprecated("Use Debug instead of Show for debugging purposes. See https://github.com/moonbitlang/core/blob/main/debug/README.mbt.md")
+pub impl[X : Show, Y : Show] Show for Iter2[X, Y]
+
+///|
+#warnings("-deprecated")
+pub impl[X : Show, Y : Show] Show for Iter2[X, Y] with fn output(self, logger) {
+  self.0.output(logger)
+}
+
+///|
+/// Consume pairs while callback returns `IterContinue`.
+#deprecated("write a loop instead.")
+pub fn[X, Y] Iter2::run(
+  self : Iter2[X, Y],
+  f : (X, Y) -> IterResult,
+) -> IterResult {
+  while self.0.next() is Some((x, y)) {
+    guard f(x, y) is IterContinue else { break IterEnd }
+  } nobreak {
+    IterContinue
+  }
+}
+
+///|
+/// Apply callback to each pair.
+pub fn[X, Y] Iter2::each(self : Iter2[X, Y], f : (X, Y) -> Unit) -> Unit {
+  self.0.each(pair => f(pair.0, pair.1))
+}
+
+///|
+/// Concatenate two `Iter2` streams.
+pub fn[X, Y] Iter2::concat(
+  self : Iter2[X, Y],
+  other : Iter2[X, Y],
+) -> Iter2[X, Y] {
+  Iter2(self.0.concat(other.0))
+}
+
+///|
+/// Collect all pairs into an array.
+pub fn[X, Y] Iter2::to_array(self : Iter2[X, Y]) -> Array[(X, Y)] {
+  self.0.to_array()
+}

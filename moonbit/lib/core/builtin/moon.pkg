@@ -1,0 +1,58 @@
+import {
+  "moonbitlang/core/abort",
+}
+
+import {
+  "moonbitlang/core/char",
+  "moonbitlang/core/int",
+  "moonbitlang/core/double",
+  "moonbitlang/core/uint64",
+  "moonbitlang/core/array",
+  "moonbitlang/core/int64",
+  "moonbitlang/core/uint",
+  "moonbitlang/core/json",
+  "moonbitlang/core/bigint",
+  "moonbitlang/core/float",
+  "moonbitlang/core/quickcheck",
+  "moonbitlang/core/test",
+  "moonbitlang/core/random",
+  "moonbitlang/core/math", // FIXME: IDE false alarm unused package
+  "moonbitlang/core/buffer",
+  "moonbitlang/core/bench",
+  "moonbitlang/core/debug",
+} for "test"
+
+warnings = "-test_unqualified_package"
+
+options(
+  targets: {
+    "array_nonjs_test.mbt": [ "not", "js" ],
+    "arraycore_js.mbt": [ "js" ],
+    "arraycore_nonjs.mbt": [ "not", "js" ],
+    "assert_debug.mbt": [ "debug" ],
+    "assert_debug_test.mbt": [ "debug" ],
+    "assert_release.mbt": [ "not", "debug" ],
+    "assert_release_test.mbt": [ "not", "debug" ],
+    "double_mod_js.mbt": [ "js" ],
+    "double_mod_nonjs.mbt": [ "not", "js" ],
+    "double_pow_js.mbt": [ "js" ],
+    "double_pow_nonjs.mbt": [ "not", "js" ],
+    "double_round.mbt": [ "not", "js", "wasm", "wasm-gc" ],
+    "double_round_js.mbt": [ "js" ],
+    "double_round_wasm.mbt": [ "wasm", "wasm-gc" ],
+    "double_ryu_js.mbt": [ "js" ],
+    "double_ryu_nonjs.mbt": [ "not", "js" ],
+    "double_scalbn.mbt": [ "not", "js" ],
+    "double_to_int.mbt": [ "not", "wasm", "wasm-gc" ],
+    "double_to_int64_js_wasm.mbt": [ "js", "wasm", "wasm-gc" ],
+    "double_to_int64_native.mbt": [ "native", "llvm" ],
+    "double_to_int_wasm.mbt": [ "wasm", "wasm-gc" ],
+    "double_to_uint.mbt": [ "not", "wasm", "wasm-gc" ],
+    "double_to_uint_wasm.mbt": [ "wasm", "wasm-gc" ],
+    "panic_nonjs_test.mbt": [ "wasm", "wasm-gc" ],
+    "panic_test.mbt": [ "not", "native", "llvm" ],
+    "panic_wbtest.mbt": [ "not", "native", "llvm" ],
+    "stringbuilder_buffer.mbt": [ "not", "js" ],
+    "stringbuilder_concat.mbt": [ "js" ],
+  },
+)

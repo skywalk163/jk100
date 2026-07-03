@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/error",
+  "moonbitlang/core/env",
+  "moonbitlang/core/string",
+  "moonbitlang/core/set",
+  "moonbitlang/core/debug",
+}
+
+warnings = "+unnecessary_annotation"

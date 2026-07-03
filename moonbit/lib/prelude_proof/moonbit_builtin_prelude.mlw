@@ -1,0 +1,563 @@
+(* Math-integer proof prelude.
+
+   This file intentionally provides the same Why3 module surface as the
+   machine-integer prelude, but interprets MoonBit machine integer families as
+   unbounded mathematical integers. Build systems should put exactly one
+   moonbit_builtin_prelude.mlw provider on the Why3 loadpath. *)
+
+module Int
+  use int.Int
+  use int.ComputerDivision as ComputerDivision
+
+  type t = int
+
+  let constant min_value_model : int = -0x8000_0000
+  let constant max_value_model : int = 0x7fff_ffff
+
+  predicate in_bounds (_n: int) = true
+
+  function model (x: t) : int = x
+
+  val model (x: t) : int
+    ensures { result = model x }
+
+  lemma model_in_bounds:
+    forall x: t. in_bounds (model x)
+
+  lemma extensionality:
+    forall x y: t. model x = model y -> x = y
+
+  function of_int (n: int) : t = n
+  lemma of_int_in_bounds:
+    forall n: int [of_int n]. model (of_int n) = n
+
+  val of_int (n: int) : t
+    ensures  { model result = n }
+
+  val constant min_value : t
+    ensures { model result = min_value_model }
+
+  val constant max_value : t
+    ensures { model result = max_value_model }
+
+  function eq (x: t) (y: t) : bool = model x = model y
+
+  function ne (x: t) (y: t) : bool = model x <> model y
+
+  function lt (x: t) (y: t) : bool = model x < model y
+
+  function le (x: t) (y: t) : bool = model x <= model y
+
+  function gt (x: t) (y: t) : bool = model x > model y
+
+  function ge (x: t) (y: t) : bool = model x >= model y
+
+  val eq (x: t) (y: t) : bool
+    ensures { result <-> model x = model y }
+
+  val ne (x: t) (y: t) : bool
+    ensures { result <-> model x <> model y }
+
+  val lt (x: t) (y: t) : bool
+    ensures { result <-> model x < model y }
+
+  val le (x: t) (y: t) : bool
+    ensures { result <-> model x <= model y }
+
+  val gt (x: t) (y: t) : bool
+    ensures { result <-> model x > model y }
+
+  val ge (x: t) (y: t) : bool
+    ensures { result <-> model x >= model y }
+
+  function neg (x: t) : t = -x
+  lemma neg_in_bounds:
+    forall x: t [neg x]. model (neg x) = -model x
+
+  function add (x: t) (y: t) : t = x + y
+  lemma add_in_bounds:
+    forall x y: t [add x y]. model (add x y) = model x + model y
+
+  function sub (x: t) (y: t) : t = x - y
+  lemma sub_in_bounds:
+    forall x y: t [sub x y]. model (sub x y) = model x - model y
+
+  function mul (x: t) (y: t) : t = x * y
+  lemma mul_in_bounds:
+    forall x y: t [mul x y]. model (mul x y) = model x * model y
+
+  function div (x: t) (y: t) : t = ComputerDivision.div x y
+  lemma div_valid:
+    forall x y: t [div x y].
+      model y <> 0 -> model (div x y) = ComputerDivision.div (model x) (model y)
+
+  function mod_ (x: t) (y: t) : t = ComputerDivision.mod x y
+  lemma mod_valid:
+    forall x y: t [mod_ x y].
+      model y <> 0 -> model (mod_ x y) = ComputerDivision.mod (model x) (model y)
+
+  val neg (x: t) : t
+    ensures  { model result = -model x }
+
+  val add (x: t) (y: t) : t
+    ensures  { model result = model x + model y }
+
+  val sub (x: t) (y: t) : t
+    ensures  { model result = model x - model y }
+
+  val mul (x: t) (y: t) : t
+    ensures  { model result = model x * model y }
+
+  val div (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.div (model x) (model y) }
+
+  val mod_ (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.mod (model x) (model y) }
+end
+
+module UInt
+  use int.Int
+  use int.ComputerDivision as ComputerDivision
+
+  type t = int
+
+  let constant min_value_model : int = 0
+  let constant max_value_model : int = 0xffff_ffff
+
+  predicate in_bounds (_n: int) = true
+
+  function model (x: t) : int = x
+
+  val model (x: t) : int
+    ensures { result = model x }
+
+  lemma model_in_bounds:
+    forall x: t. in_bounds (model x)
+
+  lemma extensionality:
+    forall x y: t. model x = model y -> x = y
+
+  function of_int (n: int) : t = n
+  lemma of_int_in_bounds:
+    forall n: int [of_int n]. model (of_int n) = n
+
+  val of_int (n: int) : t
+    ensures  { model result = n }
+
+  val constant min_value : t
+    ensures { model result = min_value_model }
+
+  val constant max_value : t
+    ensures { model result = max_value_model }
+
+  function eq (x: t) (y: t) : bool = model x = model y
+
+  function ne (x: t) (y: t) : bool = model x <> model y
+
+  function lt (x: t) (y: t) : bool = model x < model y
+
+  function le (x: t) (y: t) : bool = model x <= model y
+
+  function gt (x: t) (y: t) : bool = model x > model y
+
+  function ge (x: t) (y: t) : bool = model x >= model y
+
+  val eq (x: t) (y: t) : bool
+    ensures { result <-> model x = model y }
+
+  val ne (x: t) (y: t) : bool
+    ensures { result <-> model x <> model y }
+
+  val lt (x: t) (y: t) : bool
+    ensures { result <-> model x < model y }
+
+  val le (x: t) (y: t) : bool
+    ensures { result <-> model x <= model y }
+
+  val gt (x: t) (y: t) : bool
+    ensures { result <-> model x > model y }
+
+  val ge (x: t) (y: t) : bool
+    ensures { result <-> model x >= model y }
+
+  function add (x: t) (y: t) : t = x + y
+  lemma add_in_bounds:
+    forall x y: t [add x y]. model (add x y) = model x + model y
+
+  function sub (x: t) (y: t) : t = x - y
+  lemma sub_in_bounds:
+    forall x y: t [sub x y]. model (sub x y) = model x - model y
+
+  function mul (x: t) (y: t) : t = x * y
+  lemma mul_in_bounds:
+    forall x y: t [mul x y]. model (mul x y) = model x * model y
+
+  function div (x: t) (y: t) : t = ComputerDivision.div x y
+  lemma div_valid:
+    forall x y: t [div x y].
+      model y <> 0 -> model (div x y) = ComputerDivision.div (model x) (model y)
+
+  function mod_ (x: t) (y: t) : t = ComputerDivision.mod x y
+  lemma mod_valid:
+    forall x y: t [mod_ x y].
+      model y <> 0 -> model (mod_ x y) = ComputerDivision.mod (model x) (model y)
+
+  val add (x: t) (y: t) : t
+    ensures  { model result = model x + model y }
+
+  val sub (x: t) (y: t) : t
+    ensures  { model result = model x - model y }
+
+  val mul (x: t) (y: t) : t
+    ensures  { model result = model x * model y }
+
+  val div (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.div (model x) (model y) }
+
+  val mod_ (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.mod (model x) (model y) }
+end
+
+module Int64
+  use int.Int
+  use int.ComputerDivision as ComputerDivision
+
+  type t = int
+
+  let constant min_value_model : int = -0x8000_0000_0000_0000
+  let constant max_value_model : int = 0x7fff_ffff_ffff_ffff
+
+  predicate in_bounds (_n: int) = true
+
+  function model (x: t) : int = x
+
+  val model (x: t) : int
+    ensures { result = model x }
+
+  lemma model_in_bounds:
+    forall x: t. in_bounds (model x)
+
+  lemma extensionality:
+    forall x y: t. model x = model y -> x = y
+
+  function of_int (n: int) : t = n
+  lemma of_int_in_bounds:
+    forall n: int [of_int n]. model (of_int n) = n
+
+  val of_int (n: int) : t
+    ensures  { model result = n }
+
+  val constant min_value : t
+    ensures { model result = min_value_model }
+
+  val constant max_value : t
+    ensures { model result = max_value_model }
+
+  function eq (x: t) (y: t) : bool = model x = model y
+
+  function ne (x: t) (y: t) : bool = model x <> model y
+
+  function lt (x: t) (y: t) : bool = model x < model y
+
+  function le (x: t) (y: t) : bool = model x <= model y
+
+  function gt (x: t) (y: t) : bool = model x > model y
+
+  function ge (x: t) (y: t) : bool = model x >= model y
+
+  val eq (x: t) (y: t) : bool
+    ensures { result <-> model x = model y }
+
+  val ne (x: t) (y: t) : bool
+    ensures { result <-> model x <> model y }
+
+  val lt (x: t) (y: t) : bool
+    ensures { result <-> model x < model y }
+
+  val le (x: t) (y: t) : bool
+    ensures { result <-> model x <= model y }
+
+  val gt (x: t) (y: t) : bool
+    ensures { result <-> model x > model y }
+
+  val ge (x: t) (y: t) : bool
+    ensures { result <-> model x >= model y }
+
+  function neg (x: t) : t = -x
+  lemma neg_in_bounds:
+    forall x: t [neg x]. model (neg x) = -model x
+
+  function add (x: t) (y: t) : t = x + y
+  lemma add_in_bounds:
+    forall x y: t [add x y]. model (add x y) = model x + model y
+
+  function sub (x: t) (y: t) : t = x - y
+  lemma sub_in_bounds:
+    forall x y: t [sub x y]. model (sub x y) = model x - model y
+
+  function mul (x: t) (y: t) : t = x * y
+  lemma mul_in_bounds:
+    forall x y: t [mul x y]. model (mul x y) = model x * model y
+
+  function div (x: t) (y: t) : t = ComputerDivision.div x y
+  lemma div_valid:
+    forall x y: t [div x y].
+      model y <> 0 -> model (div x y) = ComputerDivision.div (model x) (model y)
+
+  function mod_ (x: t) (y: t) : t = ComputerDivision.mod x y
+  lemma mod_valid:
+    forall x y: t [mod_ x y].
+      model y <> 0 -> model (mod_ x y) = ComputerDivision.mod (model x) (model y)
+
+  val neg (x: t) : t
+    ensures  { model result = -model x }
+
+  val add (x: t) (y: t) : t
+    ensures  { model result = model x + model y }
+
+  val sub (x: t) (y: t) : t
+    ensures  { model result = model x - model y }
+
+  val mul (x: t) (y: t) : t
+    ensures  { model result = model x * model y }
+
+  val div (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.div (model x) (model y) }
+
+  val mod_ (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.mod (model x) (model y) }
+end
+
+module UInt64
+  use int.Int
+  use int.ComputerDivision as ComputerDivision
+
+  type t = int
+
+  let constant min_value_model : int = 0
+  let constant max_value_model : int = 0xffff_ffff_ffff_ffff
+
+  predicate in_bounds (_n: int) = true
+
+  function model (x: t) : int = x
+
+  val model (x: t) : int
+    ensures { result = model x }
+
+  lemma model_in_bounds:
+    forall x: t. in_bounds (model x)
+
+  lemma extensionality:
+    forall x y: t. model x = model y -> x = y
+
+  function of_int (n: int) : t = n
+  lemma of_int_in_bounds:
+    forall n: int [of_int n]. model (of_int n) = n
+
+  val of_int (n: int) : t
+    ensures  { model result = n }
+
+  val constant min_value : t
+    ensures { model result = min_value_model }
+
+  val constant max_value : t
+    ensures { model result = max_value_model }
+
+  function eq (x: t) (y: t) : bool = model x = model y
+
+  function ne (x: t) (y: t) : bool = model x <> model y
+
+  function lt (x: t) (y: t) : bool = model x < model y
+
+  function le (x: t) (y: t) : bool = model x <= model y
+
+  function gt (x: t) (y: t) : bool = model x > model y
+
+  function ge (x: t) (y: t) : bool = model x >= model y
+
+  val eq (x: t) (y: t) : bool
+    ensures { result <-> model x = model y }
+
+  val ne (x: t) (y: t) : bool
+    ensures { result <-> model x <> model y }
+
+  val lt (x: t) (y: t) : bool
+    ensures { result <-> model x < model y }
+
+  val le (x: t) (y: t) : bool
+    ensures { result <-> model x <= model y }
+
+  val gt (x: t) (y: t) : bool
+    ensures { result <-> model x > model y }
+
+  val ge (x: t) (y: t) : bool
+    ensures { result <-> model x >= model y }
+
+  function add (x: t) (y: t) : t = x + y
+  lemma add_in_bounds:
+    forall x y: t [add x y]. model (add x y) = model x + model y
+
+  function sub (x: t) (y: t) : t = x - y
+  lemma sub_in_bounds:
+    forall x y: t [sub x y]. model (sub x y) = model x - model y
+
+  function mul (x: t) (y: t) : t = x * y
+  lemma mul_in_bounds:
+    forall x y: t [mul x y]. model (mul x y) = model x * model y
+
+  function div (x: t) (y: t) : t = ComputerDivision.div x y
+  lemma div_valid:
+    forall x y: t [div x y].
+      model y <> 0 -> model (div x y) = ComputerDivision.div (model x) (model y)
+
+  function mod_ (x: t) (y: t) : t = ComputerDivision.mod x y
+  lemma mod_valid:
+    forall x y: t [mod_ x y].
+      model y <> 0 -> model (mod_ x y) = ComputerDivision.mod (model x) (model y)
+
+  val add (x: t) (y: t) : t
+    ensures  { model result = model x + model y }
+
+  val sub (x: t) (y: t) : t
+    ensures  { model result = model x - model y }
+
+  val mul (x: t) (y: t) : t
+    ensures  { model result = model x * model y }
+
+  val div (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.div (model x) (model y) }
+
+  val mod_ (x: t) (y: t) : t
+    requires { model y <> 0 }
+    ensures  { model result = ComputerDivision.mod (model x) (model y) }
+end
+
+module Byte
+  use mach.int.Byte as WByte
+  use Int as MoonBitInt
+
+  let function to_int (b: WByte.byte) : MoonBitInt.t = MoonBitInt.of_int (WByte.to_int b)
+end
+
+module Bytes
+  use int.Int
+  use seq.Seq
+  use mach.int.Byte
+  use Int as MoonBitInt
+
+  type bytes
+
+  val function model (b: bytes) : seq byte
+
+  val function length (b: bytes) : MoonBitInt.t
+    ensures { MoonBitInt.model result = Seq.length (model b) }
+
+  val function get (b: bytes) (i: MoonBitInt.t) : byte
+    requires { 0 <= MoonBitInt.model i < MoonBitInt.model (length b) }
+    ensures  { result = Seq.get (model b) (MoonBitInt.model i) }
+end
+
+module FixedArray
+  use int.Int
+  use array.Array
+  use Int as MoonBitInt
+
+  val function length (a: array 'a) : MoonBitInt.t
+    ensures { MoonBitInt.model result = Array.length a }
+
+  function get (a: array 'a) (i: MoonBitInt.t) : 'a =
+    Array.([]) a (MoonBitInt.model i)
+
+  val function make (n: MoonBitInt.t) (v: 'a) : array 'a
+    ensures { 0 <= MoonBitInt.model n ->
+      MoonBitInt.model (length result) = MoonBitInt.model n }
+    ensures { forall i : MoonBitInt.t.
+      0 <= MoonBitInt.model i < MoonBitInt.model n -> get result i = v }
+
+  val function make_checked (n: MoonBitInt.t) (v: 'a) : array 'a
+    requires { [@expl:array creation size] 0 <= MoonBitInt.model n }
+    ensures { result = make n v }
+    ensures { MoonBitInt.model (length result) = MoonBitInt.model n }
+    ensures { forall i : MoonBitInt.t.
+      0 <= MoonBitInt.model i < MoonBitInt.model n -> get result i = v }
+
+  val get_checked (a: array 'a) (i: MoonBitInt.t) : 'a
+    requires { [@expl:index in array bounds]
+      0 <= MoonBitInt.model i < MoonBitInt.model (length a) }
+    ensures  { result = get a i }
+
+  val set_checked (a: array 'a) (i: MoonBitInt.t) (v: 'a) : unit writes { a }
+    requires { [@expl:index in array bounds]
+      0 <= MoonBitInt.model i < MoonBitInt.model (length a) }
+    ensures  { a = (old a)[MoonBitInt.model i <- v] }
+    ensures  { get a i = v }
+    ensures  { MoonBitInt.model (length a) = MoonBitInt.model (length (old a)) }
+    ensures  { forall j : MoonBitInt.t [get a j].
+      0 <= MoonBitInt.model j < MoonBitInt.model (length a) ->
+      MoonBitInt.model j <> MoonBitInt.model i ->
+      get a j = get (old a) j }
+end
+
+module BytesView
+  use int.Int
+  use seq.Seq
+  use mach.int.Byte
+  use Int as MoonBitInt
+
+  val function length (v: seq byte) : MoonBitInt.t
+    ensures { MoonBitInt.model result = Seq.length v }
+
+  function get (v: seq byte) (i: MoonBitInt.t) : byte =
+    Seq.get v (MoonBitInt.model i)
+
+  val function get_checked (v: seq byte) (i: MoonBitInt.t) : byte
+    requires { 0 <= MoonBitInt.model i < MoonBitInt.model (length v) }
+    ensures  { result = get v i }
+end
+
+module ReadOnlyArray
+  use int.Int
+  use seq.Seq
+  use Int as MoonBitInt
+
+  type readonlyarray 'a
+
+  (* `model` is logic-only: recursive SCC shielding reasons through the sequence
+     model in specs, but program code must not call it directly. *)
+  function model (xs: readonlyarray 'a) : seq 'a
+
+  (* `empty` is a pure observer-facing constructor for readonly-array literals
+     in verified program code. Non-shielded lowering may still optimize it to
+     `Seq.empty`, but shielded recursive uses need an abstract symbol of the
+     wrapper type. *)
+  val constant empty : readonlyarray 'a
+
+  (* `length`/`get` are `val function`s rather than plain logical functions so
+     shielded readonly-array observers remain usable from non-ghost WhyML code
+     after cloning. *)
+  val function length (xs: readonlyarray 'a) : MoonBitInt.t
+
+  val function get (xs: readonlyarray 'a) (i: MoonBitInt.t) : 'a
+
+  axiom length_model:
+    forall xs : readonlyarray 'a.
+      MoonBitInt.model (length xs) = Seq.length (model xs)
+
+  axiom empty_model:
+    model (empty : readonlyarray 'a) = (Seq.empty : seq 'a)
+
+  axiom empty_length:
+    MoonBitInt.model (length (empty : readonlyarray 'a)) = 0
+
+  axiom get_model:
+    forall xs : readonlyarray 'a, i : MoonBitInt.t.
+      0 <= MoonBitInt.model i < MoonBitInt.model (length xs) ->
+      get xs i = Seq.get (model xs) (MoonBitInt.model i)
+end

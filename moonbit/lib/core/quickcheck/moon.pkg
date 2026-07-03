@@ -1,0 +1,12 @@
+import {
+  "moonbitlang/core/quickcheck/splitmix",
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/char",
+  "moonbitlang/core/array",
+}
+
+import {
+  "moonbitlang/core/bigint",
+  "moonbitlang/core/float",
+  "moonbitlang/core/double",
+} for "test"

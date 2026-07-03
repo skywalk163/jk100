@@ -1,0 +1,108 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+fn build_long_index(
+  globals : Array[Arg],
+  args : Array[Arg],
+) -> Map[String, Arg] {
+  Map(
+    [
+      for arg in [..globals, ..args] if arg.info
+      is (FlagInfo(long~, ..) | OptionInfo(long~, ..)) &&
+      long is Some(name) => (name, arg)
+    ],
+  )
+}
+
+///|
+fn build_short_index(globals : Array[Arg], args : Array[Arg]) -> Map[Char, Arg] {
+  Map(
+    [
+      for arg in [..globals, ..args] if arg.info
+      is (FlagInfo(short~, ..) | OptionInfo(short~, ..)) &&
+      short is Some(value) => (value, arg)
+    ],
+  )
+}
+
+///|
+fn collect_globals(args : Array[Arg]) -> Array[Arg] {
+  args.filter(arg => arg.global && arg.info is (FlagInfo(_) | OptionInfo(_)))
+}
+
+///|
+fn collect_non_global_names(args : Array[Arg]) -> @set.Set[String] {
+  Set([ for arg in args if !arg.global => arg.name ])
+}
+
+///|
+fn resolve_help_target(
+  cmd : Command,
+  argv : ArrayView[String],
+  builtin_help_short : Bool,
+  builtin_help_long : Bool,
+  inherited_globals : Array[Arg],
+  command_path : String,
+) -> (Command, Array[Arg], String) raise ArgParseError {
+  let targets = match argv {
+    [.. pre, "-h"] if builtin_help_short => pre
+    [.. pre, "--help"] if builtin_help_long => pre
+    _ => argv
+  }
+  for
+    name in targets
+    current = cmd,
+    current_path = command_path,
+    current_globals = inherited_globals,
+    subs = cmd.subcommands {
+    if name.has_prefix("-") {
+      raise InvalidArgument("unexpected help argument: \{name}")
+    }
+    guard subs.iter().find_first(sub => sub.name == name) is Some(sub) else {
+      raise InvalidArgument("unknown subcommand: \{name}")
+    }
+    let current_globals = merge_global_defs(
+      current_globals,
+      collect_globals(current.args),
+    )
+    let current_path = if current_path == "" {
+      sub.name
+    } else {
+      "\{current_path} \{sub.name}"
+    }
+    continue sub, current_path, current_globals, sub.subcommands
+  } nobreak {
+    (current, current_globals, current_path)
+  }
+}
+
+///|
+fn split_long(arg : String) -> (StringView, String?) {
+  let parts = [ for part in arg.split("=") => part ]
+  if parts.length() <= 1 {
+    let name = match parts[0].strip_prefix("--") {
+      Some(view) => view
+      None => parts[0]
+    }
+    (name, None)
+  } else {
+    let name = match parts[0].strip_prefix("--") {
+      Some(view) => view
+      None => parts[0]
+    }
+    let value = parts[1:].join("=")
+    (name, Some(value))
+  }
+}

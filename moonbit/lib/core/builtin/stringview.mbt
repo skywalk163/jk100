@@ -1,0 +1,901 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Returns the source string being viewed.
+fn StringView::str(self : StringView) -> String = "%stringview.str"
+
+///|
+/// Returns the starting UTF-16 code unit index into the string.
+fn StringView::start(self : StringView) -> Int = "%stringview.start"
+
+///|
+/// Returns the ending UTF-16 code unit index into the string (not included).
+fn StringView::end(self : StringView) -> Int = "%stringview.end"
+
+///|
+fn StringView::make_view(str : String, start : Int, end : Int) -> StringView = "%stringview.make"
+
+///|
+/// Returns the UTF-16 code unit at the given index.
+/// 
+/// This method has O(1) complexity.
+/// Panics if the index is out of bounds.
+/// TODO: make it intrinsic
+#alias("_[_]")
+#alias(code_unit_at)
+pub fn StringView::at(self : StringView, index : Int) -> UInt16 {
+  guard index >= 0 && index < self.length() else {
+    abort("Index out of bounds")
+  }
+  self.unsafe_get(index)
+}
+
+///|
+/// Returns the length of the view.
+/// 
+/// This method counts the charcodes(code unit) in the view and has O(1) complexity.
+pub fn StringView::length(self : StringView) -> Int {
+  self.end() - self.start()
+}
+
+///|
+/// Iterates over all suffixes of the view, advancing by a Unicode character at
+/// a time. Each yielded suffix is itself a view into the original string.
+pub fn StringView::suffixes(
+  self : StringView,
+  include_empty? : Bool = false,
+) -> Iter[StringView] {
+  let str = self.str()
+  let end = self.end()
+  let mut next_start = self.start()
+  let mut finished = false
+  Iter::new(fn() -> StringView? {
+    if finished {
+      None
+    } else if next_start == end {
+      finished = true
+      if include_empty {
+        Some(StringView::make_view(str, next_start, end))
+      } else {
+        None
+      }
+    } else {
+      let suffix = StringView::make_view(str, next_start, end)
+      let code = str.unsafe_get(next_start)
+      if code.is_leading_surrogate() &&
+        next_start + 1 < end &&
+        str.unsafe_get(next_start + 1).is_trailing_surrogate() {
+        next_start += 2
+      } else {
+        next_start += 1
+      }
+      Some(suffix)
+    }
+  })
+}
+
+///|
+/// Returns the original string that is being viewed.
+pub fn StringView::data(self : StringView) -> String {
+  self.str()
+}
+
+///|
+/// Returns the starting offset (in UTF-16 code units) of this view into its
+/// underlying string.
+pub fn StringView::start_offset(self : StringView) -> Int {
+  self.start()
+}
+
+///|
+/// Returns a new view of the view with the given start and end offsets.
+pub fn StringView::view(
+  self : StringView,
+  start_offset? : Int = 0,
+  end_offset? : Int,
+) -> StringView {
+  let end_offset = if end_offset is Some(o) { o } else { self.length() }
+  guard start_offset >= 0 &&
+    start_offset <= end_offset &&
+    end_offset <= self.length() else {
+    abort("Invalid index for View")
+  }
+  StringView::make_view(
+    self.str(),
+    self.start() + start_offset,
+    self.start() + end_offset,
+  )
+}
+
+///|
+/// Returns the UTF-16 code unit at the given index without checking if the
+/// index is within bounds.
+///
+/// This method has O(1) complexity.
+#internal(unsafe, "Undefined behavior if index is out of bounds.")
+pub fn StringView::unsafe_get(self : StringView, index : Int) -> UInt16 {
+  self.str().unsafe_get(self.start() + index)
+}
+
+///|
+/// Returns an `ArrayView` containing the UTF-16 code units of the string view.
+///
+/// This method yields code units, not Unicode characters. Surrogate pairs are
+/// represented as two `UInt16` values.
+pub fn StringView::code_units(self : StringView) -> ArrayView[UInt16] {
+  Array::makei(self.length(), i => self.unsafe_get(i))
+}
+
+///|
+/// Returns the charcode(code unit) at the given index without checking if the
+/// index is within bounds.
+/// 
+/// This method has O(1) complexity.
+/// #Example
+/// 
+/// ```mbt check
+/// test {
+///   let str = "B🤣🤣C"
+///   let view = str[:]
+///   inspect(view.unsafe_get(0), content="66")
+///   inspect(view.unsafe_get(1), content="55358")
+///   inspect(view.unsafe_get(2), content="56611")
+///   inspect(view.unsafe_get(3), content="55358")
+///   inspect(view.unsafe_get(4), content="56611")
+///   inspect(view.unsafe_get(5), content="67")
+/// }
+/// ```
+#deprecated("Use `StringView::unsafe_get` instead")
+pub fn StringView::unsafe_charcode_at(self : StringView, index : Int) -> Int {
+  self.str().unsafe_get(self.start() + index).to_int()
+}
+
+///|
+/// Returns the number of Unicode characters in this view.
+/// 
+/// Note this has O(n) complexity where n is the length of the code points in 
+/// the view.
+pub fn StringView::char_length(self : StringView) -> Int {
+  self.str().char_length(start_offset=self.start(), end_offset=self.end())
+}
+
+///|
+/// Materialize this view into an owned `String`.
+///
+/// This crosses an ownership boundary and generally allocates. Use format
+/// strings (`"\{view}"`) or `Show::to_string(view)` when you only need a
+/// display representation — those paths go through the `Show` trait and are
+/// not flagged.
+///
+/// # Examples
+///
+/// ```mbt check
+/// test {
+///   let str = "Hello World"
+///   let view = str.view(
+///     start_offset=str.offset_of_nth_char(0).unwrap(),
+///     end_offset=str.offset_of_nth_char(5).unwrap(),
+///   ) // "Hello"
+///   inspect(view.to_owned(), content="Hello")
+/// }
+/// ```
+#alias(to_string, deprecated="Use `to_owned` to allocate an owned String from a StringView; use `Show::to_string` or format strings for display")
+pub fn StringView::to_owned(self : StringView) -> String {
+  // when `self == self.str()`, `String::unsafe_substring` would return original string, which doesn't create a new copy.
+  self.str().unsafe_substring(start=self.start(), end=self.end())
+}
+
+///|
+pub impl Show for StringView with fn output(self, logger) {
+  logger.write_view(self)
+}
+
+///|
+pub impl Show for StringView with fn to_string(self) {
+  self.to_owned()
+}
+
+///|
+/// Returns an iterator over the Unicode characters in the string view.
+#alias(iterator, deprecated)
+pub fn StringView::iter(self : StringView) -> Iter[Char] {
+  let start = self.start()
+  let end = self.end()
+  let mut index = start
+  Iter::new(fn() {
+    guard index < end else { None }
+    let c1 = self.str().unsafe_get(index)
+    if c1.is_leading_surrogate() && index + 1 < self.end() {
+      let c2 = self.str().unsafe_get(index + 1)
+      if c2.is_trailing_surrogate() {
+        index += 2
+        return Some(code_point_of_surrogate_pair(c1.to_int(), c2.to_int()))
+      }
+    }
+    index += 1
+    Some(c1.unsafe_to_char())
+  })
+}
+
+///|
+/// Returns an iterator over the Unicode characters in the string view,
+/// yielding pairs of (character index, character).
+#alias(iterator2, deprecated)
+pub fn StringView::iter2(self : StringView) -> Iter2[Int, Char] {
+  let start = self.start()
+  let end = self.end()
+  let mut index = start
+  let mut char_index = 0
+  Iter2::new(fn() {
+    guard index < end else { None }
+    let c1 = self.str().unsafe_get(index)
+    if c1.is_leading_surrogate() && index + 1 < self.end() {
+      let c2 = self.str().unsafe_get(index + 1)
+      if c2.is_trailing_surrogate() {
+        let result = (
+          char_index,
+          code_point_of_surrogate_pair(c1.to_int(), c2.to_int()),
+        )
+        index += 2
+        char_index += 1
+        return Some(result)
+      }
+    }
+    let result = (char_index, c1.unsafe_to_char())
+    index += 1
+    char_index += 1
+    Some(result)
+  })
+}
+
+///|
+/// Returns an iterator over the Unicode characters in the string view in reverse order.
+#alias(rev_iterator, deprecated)
+pub fn StringView::rev_iter(self : StringView) -> Iter[Char] {
+  let start = self.start()
+  let end = self.end()
+  let mut index = end
+  Iter::new(fn() {
+    guard index > start else { None }
+    index -= 1
+    let c1 = self.str().unsafe_get(index)
+    if c1.is_trailing_surrogate() && index - 1 >= 0 {
+      let c2 = self.str().unsafe_get(index - 1)
+      if c2.is_leading_surrogate() {
+        index -= 1
+        return Some(code_point_of_surrogate_pair(c2.to_int(), c1.to_int()))
+      }
+    }
+    Some(c1.unsafe_to_char())
+  })
+}
+
+///|
+/// Checks if all characters in the string view match the condition.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let view = "zabc!"[1:-1]
+///   assert_true(view.all(c => c.is_ascii_lowercase()))
+///   assert_false(view.all(c => c == 'a'))
+/// }
+/// ```
+#locals(f)
+#alias(every)
+pub fn StringView::all(
+  self : StringView,
+  f : (Char) -> Bool raise?,
+) -> Bool raise? {
+  for c in self {
+    if !f(c) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Checks if any character in the string view matches the condition.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let view = "zabc!"[1:-1]
+///   assert_true(view.any(c => c == 'b'))
+///   assert_false(view.any(c => c.is_ascii_digit()))
+/// }
+/// ```
+#locals(f)
+#alias(exists)
+pub fn StringView::any(
+  self : StringView,
+  f : (Char) -> Bool raise?,
+) -> Bool raise? {
+  for c in self {
+    if f(c) {
+      return true
+    }
+  }
+  false
+}
+
+///|
+/// Compares two views for equality. Returns true only if both views
+/// have the same length and contain identical characters in the same order.
+pub impl Eq for StringView with fn equal(self, other) {
+  let len = self.length()
+  guard len == other.length() else { return false }
+  if physical_equal(self.str(), other.str()) && self.start() == other.start() {
+    return true
+  }
+  for i in 0..<len {
+    guard self.str().unsafe_get(self.start() + i) ==
+      other.str().unsafe_get(other.start() + i) else {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Compares a `StringView` to a `String` code-unit-for-code-unit.
+///
+/// This is the cross-type equivalent of `==` and avoids materializing a fresh
+/// `String` (or a wrapping `StringView`) when probing an owned-`String`-keyed
+/// container with a view-shaped key. When the view spans an entire backing
+/// string that is physically the same as `other`, this short-circuits.
+///
+/// Returns `true` if the lengths match and every UTF-16 code unit in `self`
+/// equals the code unit at the same index in `other`.
+///
+/// Example:
+/// ```mbt check
+/// test {
+///   let s = "say hello to everyone"
+///   inspect(
+///     s.view(start_offset=4, end_offset=9).equal_to_string("hello"),
+///     content="true",
+///   )
+///   inspect(
+///     s.view(start_offset=4, end_offset=9).equal_to_string("world"),
+///     content="false",
+///   )
+/// }
+/// ```
+pub fn StringView::equal_to_string(self : StringView, other : String) -> Bool {
+  let len = self.length()
+  guard len == other.length() else { return false }
+  if physical_equal(self.str(), other) && self.start() == 0 {
+    return true
+  }
+  for i in 0..<len {
+    guard self.str().unsafe_get(self.start() + i) == other.unsafe_get(i) else {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Views are ordered based on shortlex order by their charcodes (code units). This 
+/// orders Unicode characters based on their positions in the code charts. This is
+/// not necessarily the same as "alphabetical" order, which varies by language
+/// and locale.
+pub impl Compare for StringView with fn compare(self, other) {
+  let self_len = self.length()
+  let other_len = other.length()
+  let cmp = self_len.compare(other_len)
+  guard cmp == 0 else { return cmp }
+  if physical_equal(self.str(), other.str()) && self.start() == other.start() {
+    return 0
+  }
+  for i in 0..<self_len {
+    let cmp = self
+      .str()
+      .unsafe_get(self.start() + i)
+      .compare(other.str().unsafe_get(other.start() + i))
+    guard cmp == 0 else { return cmp }
+  }
+  0
+}
+
+///|
+/// Performs a lexicographical comparison of two string views.
+///
+/// This method compares the views character by character (UTF-16 code unit by code unit),
+/// similar to Java's `String.compareTo()`. Unlike the `Compare` trait implementation which
+/// uses shortlex order (shorter strings come first), this method compares based purely on
+/// character values until a difference is found or one view is exhausted.
+///
+/// # Returns
+///
+/// - A negative integer if `self` is lexicographically less than `other`
+/// - Zero if `self` is lexicographically equal to `other`
+/// - A positive integer if `self` is lexicographically greater than `other`
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let str = "abc"
+///   inspect(
+///     str
+///     .view(start_offset=0, end_offset=2)
+///     .lexical_compare(str.view(start_offset=0, end_offset=3)),
+///     content="-1",
+///   )
+///   inspect(
+///     str
+///     .view(start_offset=0, end_offset=3)
+///     .lexical_compare(str.view(start_offset=0, end_offset=2)),
+///     content="1",
+///   )
+///   inspect(
+///     str
+///     .view(start_offset=0, end_offset=2)
+///     .lexical_compare(str.view(start_offset=1, end_offset=3)),
+///     content="-1",
+///   )
+/// }
+/// ```
+///
+/// # Note
+///
+/// Since MoonBit strings are UTF-16 encoded (like Java), this comparison operates on
+/// UTF-16 code units, not Unicode code points. Surrogate pairs (used for characters
+/// outside the Basic Multilingual Plane) are compared as individual code units.
+pub fn StringView::lexical_compare(
+  self : StringView,
+  other : StringView,
+) -> Int {
+  let self_len = self.length()
+  let other_len = other.length()
+  let min_len = if self_len < other_len { self_len } else { other_len }
+
+  // Compare character by character up to the minimum length
+  for i in 0..<min_len {
+    let self_char = self.str().unsafe_get(self.start() + i)
+    let other_char = other.str().unsafe_get(other.start() + i)
+    let cmp = self_char.compare(other_char)
+    if cmp != 0 {
+      return cmp
+    }
+  }
+
+  // If all characters match up to min_len, the shorter one is lexicographically smaller
+  self_len.compare(other_len)
+}
+
+///|
+/// Folds an ASCII uppercase code unit (`'A'..'Z'`) to its lowercase form. Code
+/// units outside that range — including all non-ASCII code units — are returned
+/// unchanged.
+fn ascii_fold_lower_u16(c : UInt16) -> UInt16 {
+  if c >= ('A' : UInt16) && c <= ('Z' : UInt16) {
+    c + (32 : UInt16)
+  } else {
+    c
+  }
+}
+
+///|
+/// Performs a lexicographical comparison of two string views, treating ASCII
+/// letters as case-insensitive.
+///
+/// Each pair of UTF-16 code units is compared after folding ASCII `'A'..'Z'`
+/// onto `'a'..'z'`. Non-ASCII code units are compared by their raw value, so
+/// this function does **not** perform Unicode case folding (e.g. `'Ä'` and
+/// `'ä'` are still considered different). Use this when you only need to
+/// match ASCII identifiers, headers, file extensions, or similar protocol
+/// text — not for human-language text where locale-dependent folding matters.
+///
+/// Aside from case folding, the semantics match `lexical_compare`: characters
+/// are compared one by one (UTF-16 code unit by code unit) and, when one view
+/// is a prefix of the other, the shorter view is considered less. The result
+/// is independent of which view is `self`.
+///
+/// # Returns
+///
+/// - A negative integer if `self` is less than `other`
+/// - Zero if `self` is equal to `other` under ASCII case folding
+/// - A positive integer if `self` is greater than `other`
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   inspect("Hello".view().compare_ignore_ascii_case("hello".view()), content="0")
+///   inspect("ABC".view().compare_ignore_ascii_case("abd".view()), content="-1")
+///   inspect("abc".view().compare_ignore_ascii_case("AB".view()), content="1")
+/// }
+/// ```
+pub fn StringView::compare_ignore_ascii_case(
+  self : StringView,
+  other : StringView,
+) -> Int {
+  let self_len = self.length()
+  let other_len = other.length()
+  let min_len = if self_len < other_len { self_len } else { other_len }
+  for i in 0..<min_len {
+    let a = ascii_fold_lower_u16(self.str().unsafe_get(self.start() + i))
+    let b = ascii_fold_lower_u16(other.str().unsafe_get(other.start() + i))
+    let cmp = a.compare(b)
+    if cmp != 0 {
+      return cmp
+    }
+  }
+  self_len.compare(other_len)
+}
+
+///|
+/// Tests two string views for equality, treating ASCII letters as
+/// case-insensitive.
+///
+/// ASCII `'A'..'Z'` are folded onto `'a'..'z'` before comparison; all other
+/// code units (including non-ASCII letters like `'Ä'`) are compared by their
+/// raw UTF-16 value. Use this for ASCII-only protocol text — HTTP headers,
+/// file extensions, identifiers — not for human-language text where Unicode
+/// case folding matters.
+///
+/// Equivalent to `self.compare_ignore_ascii_case(other) == 0` but short-
+/// circuits on length mismatch and on the first differing code unit, so it
+/// is preferred when only equality is needed.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   inspect(
+///     "Hello".view().equal_ignore_ascii_case("hello".view()),
+///     content="true",
+///   )
+///   inspect(
+///     "Hello".view().equal_ignore_ascii_case("world".view()),
+///     content="false",
+///   )
+///   inspect("abc".view().equal_ignore_ascii_case("ab".view()), content="false")
+/// }
+/// ```
+pub fn StringView::equal_ignore_ascii_case(
+  self : StringView,
+  other : StringView,
+) -> Bool {
+  let len = self.length()
+  if len != other.length() {
+    return false
+  }
+  for i in 0..<len {
+    let a = self.str().unsafe_get(self.start() + i)
+    let b = other.str().unsafe_get(other.start() + i)
+    // Fast path: identical code units need no folding.
+    if a == b {
+      continue
+    }
+    if ascii_fold_lower_u16(a) != ascii_fold_lower_u16(b) {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Creates a `View` into a `String`.
+/// 
+/// # Example
+/// 
+/// ```mbt check
+/// test {
+///   let str = "Hello🤣🤣🤣"
+///   let view1 = str.view()
+///   inspect(view1, content="Hello🤣🤣🤣")
+///   let start_offset = str.offset_of_nth_char(1).unwrap()
+///   let end_offset = str.offset_of_nth_char(6).unwrap() // the second emoji
+///   let view2 = str.view(start_offset~, end_offset~)
+///   inspect(view2, content="ello🤣")
+/// }
+/// ```
+pub fn String::view(
+  self : String,
+  start_offset? : Int = 0,
+  end_offset? : Int,
+) -> StringView {
+  let end_offset = if end_offset is Some(o) { o } else { self.length() }
+  guard start_offset >= 0 &&
+    start_offset <= end_offset &&
+    end_offset <= self.length() else {
+    abort("Invalid index for View")
+  }
+  StringView::make_view(self, start_offset, end_offset)
+}
+
+///|
+/// Convert char array to string view.
+pub fn StringView::from_array(chars : ArrayView[Char]) -> StringView {
+  String::from_array(chars)
+}
+
+///|
+/// Convert char iterator to string view.
+#alias(from_iterator, deprecated)
+pub fn StringView::from_iter(iter : Iter[Char]) -> StringView {
+  String::from_iter(iter)
+}
+
+///|
+/// Returns a view of the string between `start` and `end`, or `None` if the
+/// range is invalid — either out of bounds or splitting a UTF-16 surrogate
+/// pair. Unlike `String::sub` (a.k.a. `s[start:end]`), this variant does not
+/// abort, making it suitable for composition with pattern matching:
+///
+/// ```mbt check
+/// test {
+///   let s = "Hello🤣World"
+///   debug_inspect(
+///     s.get_view(end=5).map(v => v.to_owned()),
+///     content="Some(\"Hello\")",
+///   )
+///   // Splitting a surrogate pair is rejected rather than panicking.
+///   debug_inspect(s.get_view(end=6), content="None")
+///   debug_inspect(s.get_view(start=100), content="None")
+/// }
+/// ```
+pub fn String::get_view(
+  self : String,
+  start? : Int = 0,
+  end? : Int,
+) -> StringView? {
+  let len = self.length()
+  let end = match end {
+    None => len
+    Some(end) => if end < 0 { len + end } else { end }
+  }
+  let start = if start < 0 { len + start } else { start }
+  guard start >= 0 && start <= end && end <= len else { None }
+  if start < len && self.unsafe_get(start).is_trailing_surrogate() {
+    return None
+  }
+  if end < len && self.unsafe_get(end).is_trailing_surrogate() {
+    return None
+  }
+  Some(StringView::make_view(self, start, end))
+}
+
+///|
+/// Returns a sub-view of the view between `start` and `end`, or `None` if the
+/// range is invalid — either out of bounds or splitting a UTF-16 surrogate
+/// pair. The optional variant of `StringView::sub` (a.k.a. `sv[start:end]`).
+pub fn StringView::get_view(
+  self : StringView,
+  start? : Int = 0,
+  end? : Int,
+) -> StringView? {
+  let str_len = self.str().length()
+  let abs_end = match end {
+    None => self.end()
+    Some(end) => if end < 0 { self.end() + end } else { self.start() + end }
+  }
+  let abs_start = if start < 0 {
+    self.end() + start
+  } else {
+    self.start() + start
+  }
+  guard abs_start >= self.start() &&
+    abs_start <= abs_end &&
+    abs_end <= self.end() else {
+    None
+  }
+  if abs_start < str_len &&
+    self.str().unsafe_get(abs_start).is_trailing_surrogate() {
+    return None
+  }
+  if abs_end < str_len && self.str().unsafe_get(abs_end).is_trailing_surrogate() {
+    return None
+  }
+  Some(StringView::make_view(self.str(), abs_start, abs_end))
+}
+
+///|
+/// Creates a view of a string with proper UTF-16 boundary validation.
+///
+/// # Parameters
+///
+/// - `start` : Starting UTF-16 code unit index (default: 0)
+///   - If positive: counts from the beginning of the string
+///   - If negative: counts from the end of the string (e.g., -1 means last position)
+/// - `end` : Ending UTF-16 code unit index (optional)
+///   - If `None`: extends to the end of the string
+///   - If positive: counts from the beginning of the string
+///   - If negative: counts from the end of the string
+///
+/// # Returns
+///
+/// - A `View` representing the specified substring range
+///
+/// # Panics
+///
+/// - If start or end indices are out of valid range
+/// - If start or end position would split a UTF-16 surrogate pair
+///
+/// This prevents creating views that would split surrogate pairs, which would
+/// result in invalid Unicode characters.
+///
+/// # Performance
+///
+/// This function has O(1) complexity as it only performs boundary checks
+/// without scanning the string content.
+///
+/// # Examples
+///
+/// ```mbt check
+/// test {
+///   let str = "Hello🤣World"
+///   let view1 = str[0:5]
+///   inspect(view1, content="Hello")
+///   let view2 = str[-5:]
+///   inspect(view2, content="World")
+/// }
+/// ```
+#alias("_[_:_]")
+pub fn String::sub(self : String, start? : Int = 0, end? : Int) -> StringView {
+  let len = self.length()
+  let end = match end {
+    None => len
+    Some(end) => if end < 0 { len + end } else { end }
+  }
+  let start = if start < 0 { len + start } else { start }
+  guard start >= 0 && start <= end && end <= len
+  if start < len {
+    guard !self.unsafe_get(start).is_trailing_surrogate()
+  }
+  if end < len {
+    guard !self.unsafe_get(end).is_trailing_surrogate()
+  }
+  StringView::make_view(self, start, end)
+}
+
+///|
+/// Creates a subview of an existing view with proper UTF-16 boundary validation.
+///
+/// # Parameters
+///
+/// - `start` : Starting UTF-16 code unit index relative to this view (default: 0)
+///   - If positive: counts from the beginning of this view
+///   - If negative: counts from the end of this view
+/// - `end` : Ending UTF-16 code unit index relative to this view (optional)
+///   - If `None`: extends to the end of this view
+///   - If positive: counts from the beginning of this view
+///   - If negative: counts from the end of this view
+///
+/// # Returns
+///
+/// - A `View` representing the specified subrange of this view
+///
+/// # Panics
+///
+/// - If start or end indices are out of this view's range
+/// - If start or end position would split a UTF-16 surrogate pair
+///
+/// This prevents creating views that would split surrogate pairs, which would
+/// result in invalid Unicode characters.
+///
+/// # Performance
+///
+/// This function has O(1) complexity as it only performs boundary checks
+/// without scanning the string content.
+///
+/// # Examples
+///
+/// ```mbt check
+/// test {
+///   let str = "Hello🤣World"[1:-1] // "ello🤣Worl"
+///   let view1 = str[0:6]
+///   inspect(view1, content="ello🤣")
+///   let view2 = str[-2:]
+///   inspect(view2, content="rl")
+/// }
+/// ```
+#alias("_[_:_]")
+pub fn StringView::sub(
+  self : StringView,
+  start? : Int = 0,
+  end? : Int,
+) -> StringView {
+  let str_len = self.str().length()
+
+  // Calculate absolute positions in the original string
+  let abs_end = match end {
+    None => self.end()
+    Some(end) => if end < 0 { self.end() + end } else { self.start() + end }
+  }
+  let abs_start = if start < 0 {
+    self.end() + start
+  } else {
+    self.start() + start
+  }
+
+  // Validate bounds against the original string
+  guard abs_start >= self.start() &&
+    abs_start <= abs_end &&
+    abs_end <= self.end()
+
+  // Check for surrogate pair boundaries
+  if abs_start < str_len {
+    guard !self.str().unsafe_get(abs_start).is_trailing_surrogate()
+  }
+  if abs_end < str_len {
+    guard !self.str().unsafe_get(abs_end).is_trailing_surrogate()
+  }
+  StringView::make_view(self.str(), abs_start, abs_end)
+}
+
+///|
+/// Test if the length of the view is equal to the given length.
+/// 
+/// This has O(n) complexity where n is the length in the parameter.
+pub fn StringView::char_length_eq(self : StringView, len : Int) -> Bool {
+  self
+  .str()
+  .char_length_eq(len, start_offset=self.start(), end_offset=self.end())
+}
+
+///|
+/// Test if the length of the view is greater than or equal to the given length.
+/// 
+/// This has O(n) complexity where n is the length in the parameter.
+pub fn StringView::char_length_ge(self : StringView, len : Int) -> Bool {
+  self
+  .str()
+  .char_length_ge(len, start_offset=self.start(), end_offset=self.end())
+}
+
+///|
+/// Returns the UTF-16 index of the i-th (zero-indexed) Unicode character of
+/// the view. If i is negative, it returns the index of the (n + i)-th character
+/// where n is the total number of Unicode characters in the view.
+pub fn StringView::offset_of_nth_char(self : StringView, i : Int) -> Int? {
+  if self
+    .str()
+    .offset_of_nth_char(i, start_offset=self.start(), end_offset=self.end())
+    is Some(index) {
+    Some(index - self.start())
+  } else {
+    None
+  }
+}
+
+///|
+/// The empty view of a string
+pub impl Default for StringView with fn default() {
+  ""
+}
+
+///|
+/// Create a new string by repeating the given character `value` `length` times.
+pub fn StringView::make(length : Int, value : Char) -> StringView {
+  String::make(length, value)
+}
+
+///|
+pub impl ToJson for StringView with fn to_json(self) {
+  String::to_json(self.to_owned())
+}
+
+///|
+pub impl Add for StringView with fn add(self, other) {
+  [..self, ..other]
+}

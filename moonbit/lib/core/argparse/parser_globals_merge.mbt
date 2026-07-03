@@ -1,0 +1,294 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+fn source_priority(source : ValueSource?) -> Int {
+  match source {
+    Some(Argv) => 3
+    Some(Env) => 2
+    Some(Default) => 1
+    None => 0
+  }
+}
+
+///|
+fn prefer_child_source(
+  parent_source : ValueSource?,
+  child_source : ValueSource?,
+) -> Bool {
+  let parent_priority = source_priority(parent_source)
+  let child_priority = source_priority(child_source)
+  if child_priority > parent_priority {
+    true
+  } else if child_priority < parent_priority {
+    false
+  } else {
+    child_source is Some(Argv)
+  }
+}
+
+///|
+fn strongest_source(
+  parent_source : ValueSource?,
+  child_source : ValueSource?,
+) -> ValueSource? {
+  if prefer_child_source(parent_source, child_source) {
+    child_source
+  } else if parent_source is Some(_) {
+    parent_source
+  } else {
+    child_source
+  }
+}
+
+///|
+fn merge_global_value_from_child(
+  parent : Matches,
+  child : Matches,
+  arg : Arg,
+  name : String,
+) -> Unit raise ArgParseError {
+  let parent_vals = parent.values.get(name)
+  let child_vals = child.values.get(name)
+  let parent_source = parent.value_sources.get(name)
+  let child_source = child.value_sources.get(name)
+  let has_parent = parent_vals is Some(pv) && pv.length() > 0
+  let has_child = child_vals is Some(cv) && cv.length() > 0
+  if !has_parent && !has_child {
+    return
+  }
+  if arg.multiple || arg.info is OptionInfo(action=Append, ..) {
+    let both_argv = parent_source is Some(Argv) && child_source is Some(Argv)
+    if both_argv {
+      let merged = []
+      if parent_vals is Some(pv) {
+        for v in pv {
+          merged.push(v)
+        }
+      }
+      if child_vals is Some(cv) {
+        for v in cv {
+          merged.push(v)
+        }
+      }
+      if merged.length() > 0 {
+        parent.values[name] = merged
+        parent.value_sources[name] = Argv
+      }
+    } else {
+      let choose_child = has_child &&
+        (!has_parent || prefer_child_source(parent_source, child_source))
+      if choose_child {
+        if child_vals is Some(cv) && cv.length() > 0 {
+          parent.values[name] = cv.copy()
+        }
+        if child_source is Some(src) {
+          parent.value_sources[name] = src
+        }
+      } else if parent_vals is Some(pv) && pv.length() > 0 {
+        parent.values[name] = pv.copy()
+        if parent_source is Some(src) {
+          parent.value_sources[name] = src
+        }
+      }
+    }
+  } else {
+    if has_parent &&
+      has_child &&
+      parent_source is Some(Argv) &&
+      child_source is Some(Argv) &&
+      arg.info is OptionInfo(action=Set, ..) {
+      raise InvalidArgument(
+        "argument '\{global_option_conflict_label(arg)}' cannot be used multiple times",
+      )
+    }
+    let choose_child = has_child &&
+      (!has_parent || prefer_child_source(parent_source, child_source))
+    if choose_child {
+      if child_vals is Some(cv) && cv.length() > 0 {
+        parent.values[name] = cv.copy()
+      }
+      if child_source is Some(src) {
+        parent.value_sources[name] = src
+      }
+    } else if parent_vals is Some(pv) && pv.length() > 0 {
+      parent.values[name] = pv.copy()
+      if parent_source is Some(src) {
+        parent.value_sources[name] = src
+      }
+    }
+  }
+}
+
+///|
+fn merge_global_flag_from_child(
+  parent : Matches,
+  child : Matches,
+  arg : Arg,
+  name : String,
+) -> Unit {
+  guard child.flags.get(name) is Some(v) else { return }
+  if arg.info is FlagInfo(action=Count, ..) {
+    let has_parent = parent.flags.get(name) is Some(_)
+    let parent_source = parent.flag_sources.get(name)
+    let child_source = child.flag_sources.get(name)
+    let both_argv = parent_source is Some(Argv) && child_source is Some(Argv)
+    if both_argv {
+      let parent_count = parent.counts.get(name).unwrap_or(0)
+      let child_count = child.counts.get(name).unwrap_or(0)
+      if child_count == 0 && !v {
+        // `--no-<flag>` after a subcommand should reset an earlier argv count.
+        parent.counts[name] = 0
+        parent.flags[name] = false
+      } else {
+        let total = parent_count + child_count
+        parent.counts[name] = total
+        parent.flags[name] = total > 0
+      }
+      if strongest_source(parent_source, child_source) is Some(src) {
+        parent.flag_sources[name] = src
+      }
+    } else {
+      let choose_child = !has_parent ||
+        prefer_child_source(parent_source, child_source)
+      if choose_child {
+        let child_count = child.counts.get(name).unwrap_or(0)
+        parent.counts[name] = child_count
+        parent.flags[name] = child_count > 0
+        if child_source is Some(src) {
+          parent.flag_sources[name] = src
+        }
+      }
+    }
+  } else {
+    let has_parent = parent.flags.get(name) is Some(_)
+    let parent_source = parent.flag_sources.get(name)
+    let child_source = child.flag_sources.get(name)
+    let choose_child = !has_parent ||
+      prefer_child_source(parent_source, child_source)
+    if choose_child {
+      parent.flags[name] = v
+      if child_source is Some(src) {
+        parent.flag_sources[name] = src
+      }
+    }
+  }
+}
+
+///|
+fn seed_child_globals_from_parent(
+  parent : Matches,
+  globals : Array[Arg],
+  child_local_non_globals : @set.Set[String],
+) -> Matches {
+  let seed = new_matches_parse_state()
+  let seen : @set.Set[String] = Set([])
+  for arg in globals {
+    let name = arg.name
+    if child_local_non_globals.contains(name) || !seen.add_and_check(name) {
+      continue
+    }
+    if arg.info is (OptionInfo(_) | PositionalInfo(_)) {
+      if parent.values.get(name) is Some(_) &&
+        parent.value_sources.get(name) is Some(Argv) {
+        // Presence marker only: avoid duplicating parent argv values in child.
+        seed.values[name] = []
+        seed.value_sources[name] = Argv
+      }
+      continue
+    }
+    if parent.flags.get(name) is Some(v) &&
+      parent.flag_sources.get(name) is Some(Argv) {
+      seed.flags[name] = v
+      seed.flag_sources[name] = Argv
+      if arg.info is FlagInfo(action=Count, ..) {
+        // Presence marker only: count is rebuilt from child argv tokens.
+        seed.counts[name] = 0
+      }
+    }
+  }
+  seed
+}
+
+///|
+fn merge_globals_from_child(
+  parent : Matches,
+  child : Matches,
+  globals : Array[Arg],
+  child_local_non_globals : @set.Set[String],
+) -> Unit raise ArgParseError {
+  for arg in globals {
+    let name = arg.name
+    if child_local_non_globals.contains(name) {
+      continue
+    }
+    match arg.info {
+      OptionInfo(_) | PositionalInfo(_) =>
+        merge_global_value_from_child(parent, child, arg, name)
+      FlagInfo(_) => merge_global_flag_from_child(parent, child, arg, name)
+    }
+  }
+}
+
+///|
+fn global_option_conflict_label(arg : Arg) -> String {
+  match arg.info {
+    FlagInfo(long~, short~, ..) | OptionInfo(long~, short~, ..) =>
+      match long {
+        Some(name) => "--\{name}"
+        None =>
+          match short {
+            Some(short) => "-\{short}"
+            None => arg.name
+          }
+      }
+    PositionalInfo(_) => arg.name
+  }
+}
+
+///|
+fn propagate_globals_to_child(
+  parent : Matches,
+  child : Matches,
+  globals : Array[Arg],
+  child_local_non_globals : @set.Set[String],
+) -> Unit {
+  for arg in globals {
+    let name = arg.name
+    if child_local_non_globals.contains(name) {
+      continue
+    }
+    if arg.info is (OptionInfo(_) | PositionalInfo(_)) {
+      if parent.values.get(name) is Some(values) {
+        child.values[name] = values.copy()
+        if parent.value_sources.get(name) is Some(src) {
+          child.value_sources[name] = src
+        }
+      }
+    } else if parent.flags.get(name) is Some(v) {
+      child.flags[name] = v
+      if parent.flag_sources.get(name) is Some(src) {
+        child.flag_sources[name] = src
+      }
+      if arg.info is FlagInfo(action=Count, ..) &&
+        parent.counts.get(name) is Some(c) {
+        child.counts[name] = c
+      }
+    }
+  }
+  if child.parsed_subcommand is Some((sub_name, sub_m)) {
+    propagate_globals_to_child(parent, sub_m, globals, Set([]))
+    child.parsed_subcommand = Some((sub_name, sub_m))
+  }
+}

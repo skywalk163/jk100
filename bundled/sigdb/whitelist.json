@@ -1,0 +1,17 @@
+{
+  "version": "2026-07-03",
+  "entries": [
+    {
+      "signer": "Microsoft Corporation",
+      "hashes_sha256": [],
+      "paths": ["%SystemRoot%\\System32\\*", "%SystemRoot%\\SysWOW64\\*"],
+      "reason": "系统核心组件"
+    },
+    {
+      "signer": "Microsoft Windows Hardware Compatibility Publisher",
+      "hashes_sha256": [],
+      "paths": [],
+      "reason": "Windows 硬件驱动签名"
+    }
+  ]
+}

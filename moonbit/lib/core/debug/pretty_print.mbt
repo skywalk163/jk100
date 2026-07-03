@@ -1,0 +1,300 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Default max depth for pruning.
+let default_max_depth : Int = 16
+
+///|
+/// Default layout threshold for compact-vs-multiline decisions.
+///
+/// Larger values prefer single-line output.
+let default_threshold : Int = 70
+
+///|
+/// Prune a `Repr` tree to a given depth (replacing pruned subtrees with
+/// `Repr::omitted()`). Returns `self` unchanged when `max_depth` is `None`.
+///
+/// Parameters:
+/// - `max_depth~`: optional maximum depth. `None` means no pruning.
+///   Values `<= 0` are treated as `1`.
+/// - `replacement?`: the node used to replace pruned subtrees.
+///   Defaults to `Repr::omitted()`.
+///
+/// Semantics:
+/// - Leaf nodes are never replaced.
+/// - When the depth budget is exhausted and the node has children:
+///   - if `info_adds_depth() == false`, pruning continues into its children;
+///   - otherwise the whole subtree is replaced by `replacement`.
+fn Repr::prune_info(
+  self : Repr,
+  replacement? : Repr = Repr::omitted(),
+  max_depth~ : Int?,
+) -> Repr {
+  match max_depth {
+    None => self
+    Some(depth) => {
+      fn go(d : Int, node : Repr) -> Repr {
+        let children = node.children()
+        if d <= 0 {
+          if children.is_empty() {
+            node
+          } else if !node.info_adds_depth() {
+            node.with_children(children.map(child => go(d, child)))
+          } else {
+            replacement
+          }
+        } else if children.is_empty() {
+          node
+        } else {
+          let next_depth = if node.info_adds_depth() { d - 1 } else { d }
+          node.with_children(children.map(child => go(next_depth, child)))
+        }
+      }
+
+      go(Int::max(1, depth), self)
+    }
+  }
+}
+
+///|
+/// Whether visiting this node should consume (decrement) the remaining depth budget.
+///
+/// This is used by depth-limited pruning: structural edge nodes like
+/// `RecordField` / `EnumLabeledArg` / `MapEntry` do not count as a depth level,
+/// so field names / labels can still be preserved when pruning.
+fn Repr::info_adds_depth(info : Repr) -> Bool {
+  !(info is (RecordField(_, _) | EnumLabeledArg(_, _) | MapEntry(_, _)))
+}
+
+///|
+/// Heuristic "size" of a node for compact-vs-multiline decisions.
+fn info_size(info : Repr) -> Int {
+  match info {
+    UnitLit => 1
+    Integer(_) => 1
+    DoubleLit(_) => 1
+    FloatLit(_) => 1
+    BoolLit(_) => 1
+    CharLit(_) => 1
+    StringLit(s) => if s.length() <= 15 { 1 } else { 2 }
+    Tuple(_) => 1
+    Array(_) => 1
+    Record(_) => 2
+    RecordField(name, _) => if name.length() <= 15 { 0 } else { 1 }
+    EnumLabeledArg(name, _) => if name.length() <= 15 { 0 } else { 1 }
+    Enum(name, _) => if name.length() <= 15 { 1 } else { 2 }
+    Opaque(name, _) => if name.length() <= 15 { 1 } else { 2 }
+    Literal(s) => if s.length() <= 15 { 1 } else { 2 }
+    Map(_) => 2
+    MapEntry(_, _) => 0
+    Omitted => 0
+  }
+}
+
+///|
+/// Returns `true` when a record field name can be printed without quotes.
+fn is_unquoted_key(key : String) -> Bool {
+  key is ['a'..='z' | '_', .. rest] &&
+  (for rest = rest {
+    match rest {
+      ['a'..='z' | 'A'..='Z' | '0'..='9' | '_', .. rest] => continue rest
+      [_, ..] => break false
+      [] => break true
+    }
+  })
+}
+
+///|
+/// Pretty-print a record field name (quoted when needed).
+fn pretty_print_label(name : String) -> String {
+  if is_unquoted_key(name) {
+    name
+  } else {
+    name.escape()
+  }
+}
+
+///|
+/// Render a single `Repr` node (label + rendered children) into `Content`.
+fn Repr::pretty_print(self : Repr, children : Array[Content]) -> Content {
+  match self {
+    UnitLit => comma_seq("(", ")", [])
+    Integer(s) =>
+      no_parens(content_parens(if s is ['-', ..] { 1 } else { 0 }, [s]))
+    DoubleLit(x) => {
+      let needs_parens = 1.0 / x < 0.0
+      leaf(x.to_string(), needs_parens~)
+    }
+    FloatLit(x) => {
+      let needs_parens : Bool = (1.0 : Float) / x < (0.0 : Float)
+      leaf(x.to_string(), needs_parens~)
+    }
+    BoolLit(x) => leaf(x.to_string())
+    CharLit(x) => leaf(x.escape())
+    StringLit(x) => no_parens(verbatim(x.escape()))
+    Tuple(_) => comma_seq("(", ")", children.map(x => x.no_wrap()))
+    Enum(name, _) =>
+      match children {
+        [] => no_parens(verbatim(name))
+        _ =>
+          if name == "Tuple" {
+            comma_seq("(", ")", children.map(x => x.no_wrap()))
+          } else {
+            comma_seq(name + "(", ")", children.map(x => x.no_wrap()))
+          }
+      }
+    Array(_) => comma_seq("[", "]", children.map(x => x.no_wrap()))
+    Record(_) => comma_seq("{", "}", children.map(x => x.no_wrap()))
+    Opaque(name, _) =>
+      if children.is_empty() {
+        no_parens(surround("<", ">", verbatim(name)))
+      } else {
+        let body = verbatim(name + ":") +
+          indent(
+            "  ",
+            comma_seq("", "", children.map(x => x.no_wrap())).no_wrap(),
+          )
+        no_parens(surround("<", ">", body))
+      }
+    Literal(str) => no_parens(verbatim(str))
+    Map(_) => comma_seq("{", "}", children.map(x => x.no_wrap()))
+    MapEntry(_, _) =>
+      match children {
+        [key, val] => {
+          let k = key.no_wrap()
+          let v = val.no_wrap()
+          match v.lines {
+            [] => empty_content()
+            [one] =>
+              no_parens(
+                content_parens(1 + k.size + v.size, [
+                  print_content(surround("", ": ", k)) + one,
+                ]),
+              )
+            [first, .. rest] => {
+              let head = print_content(surround("", ": ", k)) + first
+              no_parens(content_parens(1 + k.size + v.size, [head, ..rest]))
+            }
+          }
+        }
+        _ => empty_content()
+      }
+    EnumLabeledArg(name, _) =>
+      match children {
+        [val] =>
+          match val.lines {
+            [] => empty_content()
+            [first] =>
+              no_parens(content_parens(1 + val.size, [name + "=" + first]))
+            [first, .. rest] =>
+              no_parens(
+                content_parens(1 + val.size, [name + "=" + first, ..rest]),
+              )
+          }
+        _ => empty_content()
+      }
+    RecordField(name, _) =>
+      match children {
+        [val] => {
+          let label = pretty_print_label(name)
+          let v = val.no_wrap()
+          match v.lines {
+            [] => empty_content()
+            [one] => no_parens(content_parens(1 + v.size, [label + ": " + one]))
+            [first, .. rest] =>
+              no_parens(
+                content_parens(1 + v.size, [label + ": " + first, ..rest]),
+              )
+          }
+        }
+        _ => empty_content()
+      }
+    Omitted => parens(verbatim("..."))
+  }
+}
+
+///|
+/// Render a `Repr` as `Content` with resizing decisions.
+fn Repr::render_repr(self : Repr, threshold : Int) -> Content {
+  let label = self.shallow()
+  let children = self.children().map(child => child.render_repr(threshold))
+  with_resizing(info_size(label), threshold, label.pretty_print(children))
+}
+
+///|
+/// Pretty-print a `Repr`.
+///
+/// Optional parameters:
+/// - `max_depth?`: maximum expansion depth; deeper subtrees are replaced with `...`.
+///   Defaults to `4` when `None`. Values `<= 0` are treated as `1`.
+/// - `compact_threshold?`: compact-vs-multiline layout threshold.
+///   The printer uses a heuristic "size" for nodes; when the structure is deemed
+///   small enough under this threshold, it is kept on one line, otherwise it is
+///   broken into multiple lines.
+///   Larger values prefer single-line output. Defaults to `80` when `None`.
+pub fn render(r : Repr, max_depth? : Int) -> String {
+  let max_depth : Int? = match max_depth {
+    Some(_) => max_depth
+    None => Some(default_max_depth)
+  }
+  let threshold = default_threshold
+  let info = r.prune_info(max_depth~)
+  print_content(info.render_repr(threshold).no_wrap())
+}
+
+///|
+pub impl Show for Repr with fn output(self, logger) {
+  logger.write_string(render(self))
+}
+
+///|
+/// `Repr` is its own debug representation: `to_repr` is the identity.
+pub impl Debug for Repr with fn to_repr(self) {
+  self
+}
+
+///|
+/// Print a value in human-readable format to standard output.
+pub fn[T : Debug] debug(x : T) -> Unit {
+  println(render(x.to_repr()))
+}
+
+///|
+/// Convert a value to its debug string representation. Equivalent to
+/// `@debug.to_repr(x).to_string()`, but spelled in one step.
+///
+/// Also exported under the shorter name `repr` (re-exported from prelude,
+/// so it is callable without import). The two names refer to the same
+/// function; pick whichever reads better at the call site.
+///
+/// Note: this is the **debug** rendering, which differs from `T::to_string`
+/// (the `Show` rendering) for some types — most visibly, strings and chars
+/// are quoted and escaped here. Use `@debug.to_string` / `repr` for
+/// developer-facing output (logs, snapshots, error messages), and the
+/// `Show` `to_string` for user-facing output.
+///
+/// # Examples
+/// ```mbt check
+/// test {
+///   let str = @debug.to_string([1, 2, 3])
+///   @test.assert_eq(str, "[1, 2, 3]")
+///   // Same function under a shorter name.
+///   @test.assert_eq(repr("hi"), "\"hi\"")
+/// }
+/// ```
+#alias(repr)
+pub fn[T : Debug] to_string(x : T) -> String {
+  render(x.to_repr())
+}

@@ -1,0 +1,480 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+const HELLO_WORLD = b"H\x00e\x00l\x00l\x00o\x00,\x00 \x00W\x00o\x00r\x00l\x00d\x00!\x00"
+
+///|
+test "json repr" {
+  @json.json_inspect(b"hello", content="hello")
+  @json.json_inspect(
+    b"\x00\x01\x02\x03",
+    content=(
+      #|\x00\x01\x02\x03
+    ),
+  )
+}
+
+///|
+test "to_string" {
+  @test.assert_eq(HELLO_WORLD.to_unchecked_string(), "Hello, World!")
+}
+
+///|
+#warnings("-deprecated")
+test "to_fixedarray with len" {
+  let bytes = b"abcd"
+  let arr = bytes.to_fixedarray(len=3)
+  @test.assert_eq(arr.length(), 3)
+  @test.assert_eq(arr[0], b'a')
+  @test.assert_eq(arr[2], b'c')
+}
+
+///|
+test "sub_string" {
+  @test.assert_eq(
+    HELLO_WORLD.to_unchecked_string(offset=0, length=5 * 2),
+    "Hello",
+  )
+}
+
+///|
+test "blit_from_string" {
+  let bytes = FixedArray::make(10, Byte::default())
+  let str = "Hello"
+  bytes.blit_from_string(0, str, 0, str.length())
+  @test.assert_eq(Bytes::from_array(bytes).to_unchecked_string(), str)
+}
+
+///|
+test "set_utf8_char (ASCII)" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = 'A'
+  let len = arr.set_utf8_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 1)
+  inspect(
+    bytes,
+    content=(
+      #|b"A\x00\x00\x00"
+    ),
+  )
+}
+
+///|
+test "set_utf8_char (CJK)" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = '拼'
+  let len = arr.set_utf8_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 3)
+  inspect(
+    bytes,
+    content=(
+      #|b"\xe6\x8b\xbc\x00"
+    ),
+  )
+}
+
+///|
+test "set_utf8_char (0x600)" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = '؀'
+  inspect(char.to_int(), content="1536")
+  let len = arr.set_utf8_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 2)
+  inspect(
+    bytes,
+    content=(
+      #|b"\xd8\x80\x00\x00"
+    ),
+  )
+}
+
+///|
+test "set_utf8_char (Emoji)" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = '🙅'
+  let len = arr.set_utf8_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 4)
+  inspect(
+    bytes,
+    content=(
+      #|b"\xf0\x9f\x99\x85"
+    ),
+  )
+}
+
+///|
+test "set_utf16le_char" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = 'A'
+  let len = arr.set_utf16le_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 2)
+  @test.assert_eq(bytes.to_unchecked_string(offset=0, length=2), "A")
+  inspect(
+    bytes,
+    content=(
+      #|b"A\x00\x00\x00"
+    ),
+  )
+}
+
+///|
+test "set_utf16le_char (surrogate pair)" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = '🉑'
+  let len = arr.set_utf16le_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 4)
+  @test.assert_eq(bytes.to_unchecked_string(offset=0, length=4), "🉑")
+  inspect(
+    bytes,
+    content=(
+      #|b"<\xd8Q\xde"
+    ),
+  )
+}
+
+///|
+test "set_utf16be_char" {
+  let arr = FixedArray::makei(4, _ => b'\x00')
+  let char = 'A'
+  let len = arr.set_utf16be_char(0, char)
+  let bytes = Bytes::from_array(arr)
+  @test.assert_eq(len, 2)
+  inspect(
+    bytes,
+    content=(
+      #|b"\x00A\x00\x00"
+    ),
+  )
+  let arr = FixedArray::make(2, b'\x00')
+  let _ = arr.set_utf16be_char(0, '中') // Unicode U+4E2D
+  inspect(arr[0], content="b'\\x4E'")
+  inspect(arr[1], content="b'\\x2D'")
+  let arr = FixedArray::make(4, b'\x00')
+  let _ = arr.set_utf16be_char(0, '😃') // Unicode U+1F603
+  inspect(arr[0], content="b'\\xD8'")
+  inspect(arr[1], content="b'\\x3D'")
+  inspect(arr[2], content="b'\\xDE'")
+  inspect(arr[3], content="b'\\x03'")
+}
+
+///|
+test "equal" {
+  let copy_bytes = FixedArray::make(HELLO_WORLD.length(), Byte::default())
+  copy_bytes.blit_from_bytes(0, HELLO_WORLD, 0, HELLO_WORLD.length())
+  let copy_bytes = Bytes::from_array(copy_bytes)
+  @test.assert_eq(HELLO_WORLD, copy_bytes)
+  @test.assert_not_eq(HELLO_WORLD, Bytes::new(10))
+}
+
+///|
+test "fixedarray_byte_blit_from_string" {
+  let arr : FixedArray[Byte] = FixedArray::make(10, Byte::default())
+  let str = "Hello"
+  arr.blit_from_string(0, str, 0, str.length())
+  debug_inspect(
+    arr,
+    content=(
+      #|<FixedArray:
+      #|  [0x48, 0x00, 0x65, 0x00, 0x6c, 0x00, 0x6c, 0x00, 0x6f, 0x00]>
+    ),
+  )
+}
+
+///|
+test "fixedarray_byte_blit_from_bytes" {
+  let arr : FixedArray[Byte] = FixedArray::make(5, Byte::default())
+  let bytes = b"Hello"
+  arr.blit_from_bytes(0, bytes, 0, bytes.length())
+  debug_inspect(
+    arr,
+    content=(
+      #|<FixedArray: [0x48, 0x65, 0x6c, 0x6c, 0x6f]>
+    ),
+  )
+}
+
+///|
+test "Bytes::equal with differing bytes" {
+  let arr1 = Array::make(3, b'\x00')
+  arr1[0] = 0x01
+  arr1[1] = 0x02
+  arr1[2] = 0x03
+  let arr2 = Array::make(3, b'\x00')
+  arr2[0] = 0x01
+  arr2[1] = 0x02
+  arr2[2] = 0x04
+  let bytes1 = Bytes::from_array(arr1)
+  let bytes2 = Bytes::from_array(arr2)
+  inspect(Bytes::equal(bytes1, bytes2), content="false")
+}
+
+///|
+test "Bytes::to_fixedarray with len" {
+  let bytes = b"hello"
+  let arr = bytes[:3].to_fixedarray()
+  debug_inspect(
+    arr,
+    content=(
+      #|<FixedArray: [0x68, 0x65, 0x6c]>
+    ),
+  )
+}
+
+///|
+test "Bytes::iter2" {
+  let iter = b"ab".iter2()
+  debug_inspect(
+    iter.to_array(),
+    content=(
+      #|[(0, 0x61), (1, 0x62)]
+    ),
+  )
+}
+
+///|
+test "Bytes::add and repeat" {
+  inspect(
+    b"ab" + b"cd",
+    content=(
+      #|b"abcd"
+    ),
+  )
+  inspect(
+    b"xy".repeat(1),
+    content=(
+      #|b"xy"
+    ),
+  )
+  inspect(
+    b"xy".repeat(0),
+    content=(
+      #|b""
+    ),
+  )
+}
+
+///|
+test "panic Bytes::repeat negative" {
+  let _ = b"ab".repeat(-1)
+}
+
+///|
+test "Bytes::rev_find none" {
+  debug_inspect(b"abc".rev_find(b"x"), content="None")
+}
+
+///|
+test "blit_from_bytesview basic case" {
+  let arr = FixedArray::make(4, b'\x00')
+  let view = b"\x01\x02\x03"[1:] // view contains "\x02\x03"
+  arr.blit_from_bytesview(1, view)
+  debug_inspect(
+    arr,
+    content=(
+      #|<FixedArray: [0x00, 0x02, 0x03, 0x00]>
+    ),
+  )
+}
+
+///|
+test "panic FixedArray::set_utf8_char/invalid_code_point" {
+  let buf = FixedArray::make(4, b'\x00')
+  // Creating a character with code point greater than 0x10FFFF (1114111)
+  let invalid_char = (0x110001).unsafe_to_char()
+  // This should trigger the "Char out of range" panic
+  let _ = buf.set_utf8_char(0, invalid_char)
+}
+
+///|
+test "set_utf16be_char with surrogate pairs" {
+  let buf = FixedArray::make(4, b'\x00')
+  // Test surrogate pair encoding for a supplementary plane character (U+10437)
+  let c = '\u{10437}'
+  let len = buf.set_utf16be_char(0, c)
+  inspect(len, content="4")
+  // Check the generated bytes for correct UTF-16BE encoding
+  // High surrogate: D801, Low surrogate: DC37
+  inspect(buf[0], content="b'\\xD8'")
+  inspect(buf[1], content="b'\\x01'")
+  inspect(buf[2], content="b'\\xDC'")
+  inspect(buf[3], content="b'\\x37'")
+}
+
+///|
+test "panic set_utf16be_char with out of range code point" {
+  let buf = FixedArray::make(4, b'\x00')
+  ignore(buf.set_utf16be_char(0, (0x110000).unsafe_to_char()))
+}
+
+///|
+test "Bytes::makei with non-positive length" {
+  let bytes = Bytes::makei(0, _i => b'\x00')
+  inspect(bytes, content="b\"\"")
+  let bytes2 = Bytes::makei(-1, _i => b'\x00')
+  inspect(bytes2, content="b\"\"")
+}
+
+///|
+test "Bytes::make with non-positive length" {
+  let bytes = Bytes::make(0, b'\x00')
+  inspect(bytes, content="b\"\"")
+  let bytes2 = Bytes::make(-1, b'\x00')
+  inspect(bytes2, content="b\"\"")
+}
+
+///|
+test "@builtin.Bytes::compare/basic" {
+  // Basic comparison of different bytes
+  let a = b"\x01\x02\x03"
+  let b = b"\x01\x02\x04"
+  inspect(a.compare(b), content="-1") // a < b
+  inspect(b.compare(a), content="1") // b > a
+  inspect(a.compare(a), content="0") // a = a
+}
+
+///|
+test "@builtin.Bytes::compare/different_lengths" {
+  // Compare sequences of different lengths
+  let a = b"\x01\x02"
+  let b = b"\x01\x02\x03"
+  inspect(a.compare(b), content="-1") // shorter sequence is less
+  inspect(b.compare(a), content="1") // longer sequence is greater
+}
+
+///|
+test "@builtin.Bytes::compare/empty" {
+  // Edge cases with empty sequences
+  let empty = b""
+  let non_empty = b"\x00"
+  inspect(empty.compare(empty), content="0") // empty equals empty
+  inspect(empty.compare(non_empty), content="-1") // empty is less than non-empty
+  inspect(non_empty.compare(empty), content="1") // non-empty is greater than empty
+}
+
+///|
+test "Bytes::lexical_compare/basic" {
+  // Test equal sequences
+  inspect(b"\x01\x02\x03".lexical_compare(b"\x01\x02\x03"), content="0")
+  inspect(b"".lexical_compare(b""), content="0")
+
+  // Test shorter is less when prefix matches
+  inspect(b"\x01\x02".lexical_compare(b"\x01\x02\x03"), content="-1")
+  inspect(b"\x01\x02\x03".lexical_compare(b"\x01\x02"), content="1")
+  inspect(b"".lexical_compare(b"\x00"), content="-1")
+  inspect(b"\x00".lexical_compare(b""), content="1")
+
+  // Test element-wise comparison
+  inspect(b"\x01\x02\x03".lexical_compare(b"\x01\x02\x04"), content="-1")
+  inspect(b"\x01\x02\x04".lexical_compare(b"\x01\x02\x03"), content="1")
+
+  // Elements are compared before considering length
+  // b"\x01\x03" > b"\x01\x02\x09" because 0x03 > 0x02 at position 1
+  inspect(b"\x01\x03".lexical_compare(b"\x01\x02\x09"), content="1")
+  inspect(b"\x01\x02\x09".lexical_compare(b"\x01\x03"), content="-1")
+}
+
+///|
+test "BytesView::lexical_compare/basic" {
+  let bytes = b"\x01\x02\x03\x04\x05"
+
+  // Test equal views
+  inspect(bytes[0:3].lexical_compare(bytes[0:3]), content="0")
+  inspect(bytes[0:0].lexical_compare(bytes[5:5]), content="0") // both empty
+
+  // Test shorter is less when prefix matches
+  inspect(bytes[0:2].lexical_compare(bytes[0:3]), content="-1")
+  inspect(bytes[0:3].lexical_compare(bytes[0:2]), content="1")
+
+  // Test element-wise comparison
+  let a = b"\x01\x02\x03"
+  let b = b"\x01\x02\x04"
+  inspect(a[:].lexical_compare(b), content="-1")
+  inspect(b[:].lexical_compare(a), content="1")
+
+  // Elements are compared before considering length
+  let short_higher = b"\x01\x03"
+  let long_lower = b"\x01\x02\x09"
+  inspect(short_higher[:].lexical_compare(long_lower), content="1")
+  inspect(long_lower[:].lexical_compare(short_higher), content="-1")
+}
+
+///|
+test "Bytes find and rev_find" {
+  let target = b"abcabc"
+  let pattern = b"abc"
+  debug_inspect(target.find(pattern), content="Some(0)")
+  debug_inspect(target.rev_find(pattern), content="Some(3)")
+  debug_inspect(target.find(b"zzz"), content="None")
+  debug_inspect(target[:].find(b"bca"), content="Some(1)")
+  debug_inspect(target[:].rev_find(b"bca"), content="Some(1)")
+}
+
+///|
+test "Bytes has_prefix/has_suffix/chop" {
+  let bytes = b"hello"
+  inspect(bytes.has_prefix(b"h"), content="true")
+  inspect(bytes.has_prefix(b"he"), content="true")
+  inspect(bytes.has_prefix(b""), content="true")
+  inspect(bytes.has_prefix(b"hello"), content="true")
+  inspect(bytes.has_prefix(b"world"), content="false")
+  inspect(bytes.has_suffix(b"o"), content="true")
+  inspect(bytes.has_suffix(b"lo"), content="true")
+  inspect(bytes.has_suffix(b""), content="true")
+  inspect(bytes.has_suffix(b"hello"), content="true")
+  inspect(bytes.has_suffix(b"hel"), content="false")
+  let view = bytes[1:4]
+  inspect(view.has_prefix(b"ell"), content="true")
+  inspect(view.has_suffix(b"ell"), content="true")
+  inspect(view.has_prefix(b"el"), content="true")
+  inspect(view.has_suffix(b"ll"), content="true")
+  inspect(view.has_prefix(b"ll"), content="false")
+  debug_inspect(view.chop_prefix(b"el"), content="Some(<BytesView: [0x6c]>)")
+  debug_inspect(view.chop_suffix(b"ll"), content="Some(<BytesView: [0x65]>)")
+  debug_inspect(
+    view.chop_prefix(b""),
+    content="Some(<BytesView: [0x65, 0x6c, 0x6c]>)",
+  )
+  debug_inspect(
+    view.chop_suffix(b""),
+    content="Some(<BytesView: [0x65, 0x6c, 0x6c]>)",
+  )
+  debug_inspect(
+    bytes.chop_prefix(b"he"),
+    content="Some(<BytesView: [0x6c, 0x6c, 0x6f]>)",
+  )
+  debug_inspect(
+    bytes.chop_suffix(b"lo"),
+    content="Some(<BytesView: [0x68, 0x65, 0x6c]>)",
+  )
+  debug_inspect(bytes.chop_prefix(b"zz"), content="None")
+  debug_inspect(bytes.chop_suffix(b"zz"), content="None")
+}
+
+///|
+test "BytesView::to_array" {
+  let view = b"hi"[:]
+  debug_inspect(
+    view.to_array(),
+    content=(
+      #|[0x68, 0x69]
+    ),
+  )
+}

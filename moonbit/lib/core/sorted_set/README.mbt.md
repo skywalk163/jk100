@@ -1,0 +1,231 @@
+# Sorted Set
+
+A mutable set backed by an AVL tree that maintains elements in sorted order.
+
+# Usage
+
+## Create
+
+You can create an empty SortedSet or a SortedSet from other containers.
+
+```mbt check
+///|
+test {
+  let _set1 : @sorted_set.SortedSet[Int] = SortedSet([])
+  let _set2 = @sorted_set.singleton(1)
+  let _set3 = @sorted_set.from_array([1])
+}
+```
+### Container Operations
+
+Add an element to the SortedSet in place.
+
+```mbt check
+///|
+test {
+  let set4 = @sorted_set.from_array([1, 2, 3, 4])
+  set4.add(5) // ()
+  let set6 = @sorted_set.from_array([1, 2, 3, 4, 5])
+  @test.assert_eq(set6.to_array(), [1, 2, 3, 4, 5])
+}
+```
+
+Remove an element from the SortedSet in place.
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([3, 8, 1])
+  set.remove(8) // () 
+  let set7 = @sorted_set.from_array([1, 3])
+  @test.assert_eq(set7.to_array(), [1, 3])
+}
+```
+
+Whether an element is in the set.
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([1, 2, 3, 4])
+  @test.assert_eq(set.contains(1), true)
+  @test.assert_eq(set.contains(5), false)
+}
+```
+
+Iterates over the elements in the set.
+
+```mbt check
+///|
+test {
+  let arr = []
+  @sorted_set.from_array([1, 2, 3, 4]).each(v => arr.push(v))
+  @test.assert_eq(arr, [1, 2, 3, 4])
+}
+```
+
+Get the size of the set.
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([1, 2, 3, 4])
+  @test.assert_eq(set.length(), 4)
+}
+```
+
+Whether the set is empty.
+
+```mbt check
+///|
+test {
+  let set : @sorted_set.SortedSet[Int] = SortedSet([])
+  @test.assert_eq(set.is_empty(), true)
+}
+```
+
+### Set Operations
+
+Union, intersection and difference of two sets. They return a new set that does not overlap with the original sets in memory.
+
+```mbt check
+///|
+test {
+  let set1 = @sorted_set.from_array([3, 4, 5])
+  let set2 = @sorted_set.from_array([4, 5, 6])
+  let set3 = set1.union(set2)
+  @test.assert_eq(set3.to_array(), [3, 4, 5, 6])
+  let set4 = set1.intersection(set2)
+  @test.assert_eq(set4.to_array(), [4, 5])
+  let set5 = set1.difference(set2)
+  @test.assert_eq(set5.to_array(), [3])
+}
+```
+
+Determine the inclusion and separation relationship between two sets.
+
+```mbt check
+///|
+test {
+  let set1 = @sorted_set.from_array([1, 2, 3])
+  let set2 = @sorted_set.from_array([7, 2, 9, 4, 5, 6, 3, 8, 1])
+  @test.assert_eq(set1.subset(set2), true)
+  let set3 = @sorted_set.from_array([4, 5, 6])
+  @test.assert_eq(set1.disjoint(set3), true)
+}
+```
+
+### Symmetric Difference
+
+Elements in one set but not both:
+
+```mbt check
+///|
+test {
+  let a = @sorted_set.from_array([1, 2, 3])
+  let b = @sorted_set.from_array([2, 3, 4])
+  @test.assert_eq(a.symmetric_difference(b).to_array(), [1, 4])
+}
+```
+
+### Range Queries
+
+`range(low, high)` returns an iterator over elements in `[low, high]`:
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([1, 3, 5, 7, 9, 11])
+  let in_range = set.range(3, 9).collect()
+  @test.assert_eq(in_range, [3, 5, 7, 9])
+}
+```
+
+### Indexed Iteration
+
+`eachi` iterates with an index (in sorted order):
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([10, 20, 30])
+  let pairs = []
+  set.eachi(fn(i, v) { pairs.push((i, v)) })
+  @test.assert_eq(pairs, [(0, 10), (1, 20), (2, 30)])
+}
+```
+
+### Iterators & Conversion
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([3, 1, 2])
+  // iter returns elements in sorted order
+  debug_inspect(set.iter().to_array(), content="[1, 2, 3]")
+  // to_array
+  @test.assert_eq(set.to_array(), [1, 2, 3])
+  // from_iter
+  let set2 = @sorted_set.from_iter([4, 5, 6].iter())
+  @test.assert_eq(set2.to_array(), [4, 5, 6])
+}
+```
+
+### Copy
+
+`copy()` creates a shallow clone:
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([1, 2, 3])
+  let cloned = set.copy()
+  cloned.add(4)
+  @test.assert_eq(set.to_array(), [1, 2, 3]) // original unchanged
+  @test.assert_eq(cloned.to_array(), [1, 2, 3, 4])
+}
+```
+
+### @debug.Debug
+
+SortedSet implements @debug.Debug, which allows you to inspect its elements in sorted order.
+
+```mbt check
+///|
+test {
+  let set = @sorted_set.from_array([1, 2, 3])
+  debug_inspect(
+    set,
+    content=(
+      #|<SortedSet: [1, 2, 3]>
+    ),
+  )
+}
+```
+
+## Performance
+
+- **add**: O(log n)
+- **remove**: O(log n)
+- **contains**: O(log n)
+- **iterate**: O(n)
+- **space complexity**: O(n)
+
+## Implementation Notes
+
+The SortedSet is implemented as an AVL tree, a self-balancing binary search tree. After insertions and deletions, the tree automatically rebalances to maintain O(log n) search, insertion, and deletion times.
+
+Key properties of the AVL tree implementation:
+- Each node stores a height field indicating the height of that subtree
+- The balance factor (height difference between left and right subtrees) is maintained between -1 and 1 for all nodes
+- Rebalancing is done through tree rotations (single and double rotations)
+
+## Comparison with Other Collections
+
+- **@hashset.HashSet**: Provides O(1) average case lookups but doesn't maintain order; use when order doesn't matter
+- **@sorted_set.SortedSet**: Maintains elements in sorted order; use when you need elements to be sorted
+
+Choose SortedSet when you need:
+- Elements in sorted order
+- Efficient ordered iteration
+- Logarithmic time operations

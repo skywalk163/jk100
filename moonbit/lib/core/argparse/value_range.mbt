@@ -1,0 +1,40 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Number-of-values constraint for an argument.
+#warnings("-deprecated_syntax-deprecated")
+pub struct ValueRange {
+  priv lower : Int
+  priv upper : Int?
+} derive(Eq, Show, @debug.Debug)
+
+///|
+/// Create a value-count range.
+///
+/// Notes:
+/// - `lower` defaults to `0`.
+/// - `upper` omitted means no upper bound.
+/// - `ValueRange(lower=0)` means `0..`.
+/// - `ValueRange(lower=1, upper=3)` means `1..=3`.
+#alias(new, deprecated="Use `ValueRange()` instead")
+pub fn ValueRange::ValueRange(lower? : Int = 0, upper? : Int) -> ValueRange {
+  { lower, upper }
+}
+
+///|
+/// Exact single-value range (`1..1`).
+pub fn ValueRange::single() -> ValueRange {
+  ValueRange(lower=1, upper=1)
+}

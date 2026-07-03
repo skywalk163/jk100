@@ -1,0 +1,318 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+fn assign_positionals(
+  matches : Matches,
+  positionals : Array[Arg],
+  values : Array[String],
+) -> Unit raise ArgParseError {
+  let cursor = for idx, arg in positionals; cursor = 0 {
+    let remaining = values.length() - cursor
+    if arg.multiple {
+      let (min, max) = arg_min_max(arg)
+      let reserve = remaining_positional_min(positionals, idx + 1)
+      let mut take = remaining - reserve
+      if take < 0 {
+        take = 0
+      }
+      match max {
+        Some(max_count) if take > max_count => take = max_count
+        _ => ()
+      }
+      if take < min {
+        take = min
+      }
+      if take > remaining {
+        take = remaining
+      }
+      let mut taken = 0
+      while taken < take {
+        add_value(matches, arg.name, values[cursor + taken], arg, Argv)
+        taken = taken + 1
+      }
+      continue cursor + taken
+    }
+    if remaining > 0 {
+      add_value(matches, arg.name, values[cursor], arg, Argv)
+      continue cursor + 1
+    } else {
+      continue cursor
+    }
+  } nobreak {
+    cursor
+  }
+  if cursor < values.length() {
+    let overflow_label = if positionals.length() > 0 {
+      let last = positionals[positionals.length() - 1]
+      if last.multiple {
+        Some("<\{last.name}...>")
+      } else {
+        Some("<\{last.name}>")
+      }
+    } else {
+      None
+    }
+    raise TooManyPositionals(values[cursor], overflow_label)
+  }
+}
+
+///|
+fn positional_min_required(arg : Arg) -> Int {
+  let (min, _) = arg_min_max(arg)
+  if min > 0 {
+    min
+  } else {
+    0
+  }
+}
+
+///|
+fn remaining_positional_min(positionals : Array[Arg], start : Int) -> Int {
+  for idx = start, total = 0; idx < positionals.length(); {
+    continue idx + 1, total + positional_min_required(positionals[idx])
+  } nobreak {
+    total
+  }
+}
+
+///|
+fn add_value(
+  matches : Matches,
+  name : String,
+  value : String,
+  arg : Arg,
+  source : ValueSource,
+) -> Unit {
+  if arg.multiple || arg.info is OptionInfo(action=Append, ..) {
+    let arr = matches.values.get(name).unwrap_or([])
+    arr.push(value)
+    matches.values[name] = arr
+    matches.value_sources[name] = source
+  } else {
+    matches.values[name] = [value]
+    matches.value_sources[name] = source
+  }
+}
+
+///|
+fn assign_value(
+  matches : Matches,
+  arg : Arg,
+  value : String,
+  source : ValueSource,
+) -> Unit raise ArgParseError {
+  match arg.info {
+    OptionInfo(action=Append, ..) =>
+      add_value(matches, arg.name, value, arg, source)
+    OptionInfo(action=Set, ..) | PositionalInfo(_) =>
+      add_value(matches, arg.name, value, arg, source)
+    FlagInfo(action=SetTrue, ..) => {
+      let flag = parse_bool(value)
+      matches.flags[arg.name] = flag
+      matches.flag_sources[arg.name] = source
+    }
+    FlagInfo(action=SetFalse, ..) => {
+      let flag = parse_bool(value)
+      matches.flags[arg.name] = !flag
+      matches.flag_sources[arg.name] = source
+    }
+    FlagInfo(action=Count, ..) => {
+      let count = parse_count(value)
+      matches.counts[arg.name] = count
+      matches.flags[arg.name] = count > 0
+      matches.flag_sources[arg.name] = source
+    }
+    FlagInfo(action=Help, ..) =>
+      raise InvalidArgument("help action does not take values")
+    FlagInfo(action=Version, ..) =>
+      raise InvalidArgument("version action does not take values")
+  }
+}
+
+///|
+fn option_conflict_label(arg : Arg) -> String {
+  match arg.info {
+    FlagInfo(long~, short~, ..) | OptionInfo(long~, short~, ..) =>
+      match long {
+        Some(name) => "--\{name}"
+        None =>
+          match short {
+            Some(short) => "-\{short}"
+            None => arg.name
+          }
+      }
+    PositionalInfo(_) => arg.name
+  }
+}
+
+///|
+fn check_duplicate_set_occurrence(
+  matches : Matches,
+  arg : Arg,
+) -> Unit raise ArgParseError {
+  guard arg.info is (OptionInfo(action=Set, ..) | PositionalInfo(_)) else {
+    return
+  }
+  if matches.values.get(arg.name) is Some(values) && values.length() > 0 {
+    raise InvalidArgument(
+      "argument '\{option_conflict_label(arg)}' cannot be used multiple times",
+    )
+  }
+}
+
+///|
+fn should_stop_option_value(
+  value : String,
+  arg : Arg,
+  _long_index : Map[String, Arg],
+  _short_index : Map[Char, Arg],
+) -> Bool {
+  if !value.has_prefix("-") || value == "-" {
+    return false
+  }
+  if arg.info
+    is (OptionInfo(allow_hyphen_values~, ..)
+    | PositionalInfo(allow_hyphen_values~, ..)) &&
+    allow_hyphen_values {
+    // Rust clap parity:
+    // - `clap_builder/src/parser/parser.rs`: `parse_long_arg` / `parse_short_arg`
+    //   return `ParseResult::MaybeHyphenValue` when the pending arg in
+    //   `ParseState::Opt` or `ParseState::Pos` has `allow_hyphen_values`.
+    // - `clap_builder/src/builder/arg.rs` (`Arg::allow_hyphen_values` docs):
+    //   prior args with this setting take precedence over known flags/options.
+    // - `tests/builder/opts.rs` (`leading_hyphen_with_flag_after`):
+    //   a pending option consumes `-f` as a value rather than parsing flag `-f`.
+    // This also means `--` is consumed as a value while the option remains pending.
+    return false
+  }
+  true
+}
+
+///|
+fn apply_env(
+  matches : Matches,
+  args : Array[Arg],
+  env : Map[String, String],
+) -> Unit raise ArgParseError {
+  for arg in args {
+    let name = arg.name
+    if matches_has_value_or_flag(matches, name) {
+      continue
+    }
+    let env_name = match arg.env {
+      Some(value) => value
+      None => continue
+    }
+    let value = match env.get(env_name) {
+      Some(v) => v
+      None => continue
+    }
+    if arg.info is (OptionInfo(_) | PositionalInfo(_)) {
+      assign_value(matches, arg, value, Env)
+      continue
+    }
+    match arg.info {
+      FlagInfo(action=Count, ..) => {
+        let count = parse_count(value)
+        matches.counts[name] = count
+        matches.flags[name] = count > 0
+        matches.flag_sources[name] = Env
+      }
+      FlagInfo(action=SetFalse, ..) => {
+        let flag = parse_bool(value)
+        matches.flags[name] = !flag
+        matches.flag_sources[name] = Env
+      }
+      FlagInfo(action=SetTrue, ..) => {
+        let flag = parse_bool(value)
+        matches.flags[name] = flag
+        matches.flag_sources[name] = Env
+      }
+      OptionInfo(_) | PositionalInfo(_) => ()
+      FlagInfo(action=Help | Version, ..) => ()
+    }
+  }
+}
+
+///|
+fn apply_defaults(matches : Matches, args : Array[Arg]) -> Unit {
+  for arg in args {
+    let default_values = match arg.info {
+      FlagInfo(_) => continue
+      OptionInfo(default_values~, ..) | PositionalInfo(default_values~, ..) =>
+        default_values
+    }
+    if matches_has_value_or_flag(matches, arg.name) {
+      continue
+    }
+    match default_values {
+      Some(values) if values.length() > 0 =>
+        for value in values {
+          let _ = add_value(matches, arg.name, value, arg, Default)
+        }
+      _ => ()
+    }
+  }
+}
+
+///|
+fn matches_has_value_or_flag(matches : Matches, name : String) -> Bool {
+  matches.flags.contains(name) || matches.values.contains(name)
+}
+
+///|
+fn apply_flag(matches : Matches, arg : Arg, source : ValueSource) -> Unit {
+  match arg.info {
+    FlagInfo(action=SetTrue, ..) => matches.flags[arg.name] = true
+    FlagInfo(action=SetFalse, ..) => matches.flags[arg.name] = false
+    FlagInfo(action=Count, ..) => {
+      let current = matches.counts.get(arg.name).unwrap_or(0)
+      matches.counts[arg.name] = current + 1
+      matches.flags[arg.name] = true
+    }
+    FlagInfo(action=Help, ..) => ()
+    FlagInfo(action=Version, ..) => ()
+    _ => matches.flags[arg.name] = true
+  }
+  matches.flag_sources[arg.name] = source
+}
+
+///|
+fn parse_bool(value : String) -> Bool raise ArgParseError {
+  match value {
+    "1" | "true" | "yes" | "on" => true
+    "0" | "false" | "no" | "off" => false
+    _ =>
+      raise InvalidValue(
+        "invalid value '\{value}' for boolean flag; expected one of: 1, 0, true, false, yes, no, on, off",
+      )
+  }
+}
+
+///|
+fn parse_count(value : String) -> Int raise ArgParseError {
+  try @string.parse_int(value) catch {
+    _ =>
+      raise InvalidValue(
+        "invalid value '\{value}' for count; expected a non-negative integer",
+      )
+  } noraise {
+    _..<0 =>
+      raise InvalidValue(
+        "invalid value '\{value}' for count; expected a non-negative integer",
+      )
+    v => v
+  }
+}

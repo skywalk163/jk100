@@ -1,0 +1,55 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Construct `ok` variant.
+#deprecated("Use `Ok(value)` instead")
+pub fn[T, E] ok(value : T) -> Result[T, E] {
+  Ok(value)
+}
+
+///|
+/// Construct `err` variant.
+#deprecated("Use `Err(value)` instead")
+pub fn[T, E] err(value : E) -> Result[T, E] {
+  Err(value)
+}
+
+///|
+/// Return whether the value ok.
+#deprecated("use `x is Ok(_)` instead")
+pub fn[T, E] Result::is_ok(self : Result[T, E]) -> Bool {
+  self is Ok(_)
+}
+
+///|
+/// Return whether the value err.
+#deprecated("use `x is Err(_)` instead")
+pub fn[T, E] Result::is_err(self : Result[T, E]) -> Bool {
+  self is Err(_)
+}
+
+///|
+/// Function `fold`.
+#deprecated("use `match result { Ok(value) => ok(value); Err(error) => err(error) }` instead")
+pub fn[T, E, V] Result::fold(
+  self : Result[T, E],
+  ok : (T) -> V,
+  err : (E) -> V,
+) -> V {
+  match self {
+    Ok(value) => ok(value)
+    Err(error) => err(error)
+  }
+}

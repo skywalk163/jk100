@@ -1,0 +1,271 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Declarative command specification.
+pub struct Command {
+  priv name : String
+  priv args : Array[Arg]
+  priv groups : Array[ArgGroup]
+  priv subcommands : Array[Command]
+  priv about : String?
+  priv version : String?
+  priv disable_help_flag : Bool
+  priv disable_version_flag : Bool
+  priv disable_help_subcommand : Bool
+  priv arg_required_else_help : Bool
+  priv subcommand_required : Bool
+  priv hidden : Bool
+  priv mut build_error : ArgBuildError?
+} derive(@debug.Debug)
+
+///|
+/// Create a declarative command specification.
+///
+/// Notes:
+/// - `flags`, `options`, and `positionals` declare arguments by kind.
+/// - `groups` declares argument-group membership and policies.
+/// - `disable_help_flag` / `disable_version_flag` disable built-in
+///   `--help` / `--version`.
+/// - `disable_help_subcommand` disables built-in `help <subcommand>` routing.
+/// - `arg_required_else_help=true` prints help when no argv tokens are provided.
+/// - `subcommand_required=true` requires selecting a subcommand.
+/// - `hidden=true` omits this command from parent command listings.
+#alias(new, deprecated="Use `Command()` instead")
+pub fn Command::Command(
+  name : StringView,
+  flags? : ArrayView[FlagArg] = [],
+  options? : ArrayView[OptionArg] = [],
+  positionals? : ArrayView[PositionArg] = [],
+  subcommands? : ArrayView[Command] = [],
+  about? : StringView,
+  version? : StringView,
+  disable_help_flag? : Bool = false,
+  disable_version_flag? : Bool = false,
+  disable_help_subcommand? : Bool = false,
+  arg_required_else_help? : Bool = false,
+  subcommand_required? : Bool = false,
+  hidden? : Bool = false,
+  groups? : ArrayView[ArgGroup] = [],
+) -> Command {
+  let (parsed_args, arg_error) = collect_args(flags, options, positionals)
+  let groups = groups.to_owned()
+  let cmd = Command::{
+    name: name.to_owned(),
+    args: parsed_args,
+    groups,
+    subcommands: subcommands.to_owned(),
+    about: about.map(v => v.to_owned()),
+    version: version.map(v => v.to_owned()),
+    disable_help_flag,
+    disable_version_flag,
+    disable_help_subcommand,
+    arg_required_else_help,
+    subcommand_required,
+    hidden,
+    build_error: arg_error,
+  }
+  if cmd.build_error is None {
+    validate_command(cmd, parsed_args, groups, []) catch {
+      err => cmd.build_error = Some(err)
+    }
+  }
+  cmd
+}
+
+///|
+/// Render help text without parsing.
+pub fn Command::render_help(self : Command) -> String {
+  render_help(self)
+}
+
+///|
+/// Parse argv/environment according to this command spec.
+///
+/// Behavior:
+/// - Help/version requests print output immediately and terminate with exit code
+///   `0`.
+/// - Parse failures raise display-ready error text with full contextual help.
+/// - Command-definition validation failures raise display-ready validation
+///   text (without appended help).
+///
+/// Value precedence is `argv > env > default_values`.
+#as_free_fn
+pub fn Command::parse(
+  self : Command,
+  argv? : ArrayView[String] = default_argv(),
+  env? : Map[String, String] = Map([]),
+) -> Matches raise {
+  try {
+    let raw = parse_command(self, argv, env, [], Map([]), Map([]), self.name)
+    build_matches(self, raw, [])
+  } catch {
+    DisplayHelp::Message(text) => print_and_exit_success(text)
+    DisplayVersion::Message(text) => print_and_exit_success(text)
+    ArgError::Message(_) as err => raise err
+    err => {
+      println(err.to_string())
+      panic()
+    }
+  }
+}
+
+///|
+fn build_matches(
+  cmd : Command,
+  raw : Matches,
+  inherited_globals : Array[Arg],
+) -> Matches {
+  let flags = Map([])
+  let values = Map([])
+  let flag_counts = Map([])
+  let sources = Map([])
+  let specs = inherited_globals + cmd.args
+
+  for spec in specs {
+    let name = arg_name(spec)
+    if raw.values.get(name) is Some(vs) {
+      values[name] = vs.copy()
+    }
+    let count = raw.counts.get_or_default(name, 0)
+    if count > 0 {
+      flag_counts[name] = count
+    }
+    let source = match raw.flag_sources.get(name) {
+      Some(v) => Some(v)
+      None => raw.value_sources.get(name)
+    }
+    if source is Some(source) {
+      sources[name] = source
+      if spec.info is FlagInfo(action~, ..) {
+        if action is Count {
+          flags[name] = count > 0
+        } else {
+          flags[name] = raw.flags.get(name).unwrap_or(false)
+        }
+      }
+    }
+  }
+  let child_globals = merge_global_defs(
+    inherited_globals,
+    collect_globals(cmd.args),
+  )
+
+  let subcommand = match raw.parsed_subcommand {
+    Some((name, sub_raw)) =>
+      if find_decl_subcommand(cmd.subcommands, name) is Some(sub_spec) {
+        Some((name, build_matches(sub_spec, sub_raw, child_globals)))
+      } else {
+        Some(
+          (
+            name,
+            {
+              flags: {},
+              values: {},
+              flag_counts: {},
+              sources: {},
+              subcommand: None,
+              counts: {},
+              flag_sources: {},
+              value_sources: {},
+              parsed_subcommand: None,
+            },
+          ),
+        )
+      }
+    None => None
+  }
+
+  {
+    flags,
+    values,
+    flag_counts,
+    sources,
+    subcommand,
+    counts: {},
+    flag_sources: {},
+    value_sources: {},
+    parsed_subcommand: None,
+  }
+}
+
+///|
+fn find_decl_subcommand(subs : Array[Command], name : String) -> Command? {
+  for sub in subs {
+    if sub.name == name {
+      return Some(sub)
+    }
+  }
+  None
+}
+
+///|
+fn collect_args(
+  flags : ArrayView[FlagArg],
+  options : ArrayView[OptionArg],
+  positionals : ArrayView[PositionArg],
+) -> (Array[Arg], ArgBuildError?) {
+  let args : Array[Arg] = []
+  for flag in flags {
+    args.push(flag.arg)
+  }
+  for option in options {
+    args.push(option.arg)
+  }
+  for positional in positionals {
+    args.push(positional.arg)
+  }
+  let ctx = ValidationCtx::new()
+  let first_error : ArgBuildError? = for
+    flag in flags
+    first_error = (None : ArgBuildError?) {
+    validate_flag_arg(flag.arg, ctx) catch {
+      err => if first_error is None { continue Some(err) }
+    }
+    continue first_error
+  } nobreak {
+    first_error
+  }
+  let first_error : ArgBuildError? = for
+    option in options
+    first_error = first_error {
+    validate_option_arg(option.arg, ctx) catch {
+      err => if first_error is None { continue Some(err) }
+    }
+    continue first_error
+  } nobreak {
+    first_error
+  }
+  let first_error : ArgBuildError? = for
+    positional in positionals
+    first_error = first_error {
+    validate_positional_arg(positional.arg, ctx) catch {
+      err => if first_error is None { continue Some(err) }
+    }
+    continue first_error
+  } nobreak {
+    first_error
+  }
+  let first_error = if first_error is None {
+    try {
+      ctx.finalize()
+      None
+    } catch {
+      err => Some(err)
+    }
+  } else {
+    first_error
+  }
+  (args, first_error)
+}

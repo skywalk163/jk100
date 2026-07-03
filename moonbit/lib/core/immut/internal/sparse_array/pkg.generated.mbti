@@ -1,0 +1,37 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitlang/core/immut/internal/sparse_array"
+
+// Values
+pub fn[X] doubleton(Int, X, Int, X) -> SparseArray[X]
+
+pub fn[X] empty() -> SparseArray[X]
+
+pub fn[X] singleton(Int, X) -> SparseArray[X]
+
+// Errors
+
+// Types and methods
+pub struct Bitset(UInt) derive(Eq)
+pub fn Bitset::first_idx(Self) -> Int
+
+pub struct SparseArray[X] {
+  elem_info : Bitset
+  data : FixedArray[X]
+} derive(Eq)
+pub fn[X] SparseArray::add(Self[X], Int, X) -> Self[X]
+pub fn[X] SparseArray::difference(Self[X], Self[X], (X, X) -> X?) -> Self[X]?
+pub fn[X] SparseArray::each(Self[X], (X) -> Unit raise?) -> Unit raise?
+pub fn[X] SparseArray::filter(Self[X], (X) -> X? raise?) -> Self[X]? raise?
+pub fn[X] SparseArray::get(Self[X], Int) -> X?
+pub fn[X] SparseArray::intersection(Self[X], Self[X], (X, X) -> X? raise?) -> Self[X]? raise?
+#alias(size, deprecated)
+pub fn[X] SparseArray::length(Self[X]) -> Int
+pub fn[X, Y] SparseArray::map(Self[X], (X) -> Y raise?) -> Self[Y] raise?
+pub fn[X] SparseArray::remove(Self[X], Int) -> Self[X]
+pub fn[X] SparseArray::replace(Self[X], Int, X) -> Self[X]
+pub fn[X] SparseArray::union(Self[X], Self[X], (X, X) -> X raise?) -> Self[X] raise?
+
+// Type aliases
+
+// Traits
+

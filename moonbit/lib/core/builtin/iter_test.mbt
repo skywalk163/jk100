@@ -1,0 +1,1254 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+test "empty" {
+  let iter = Iter::empty()
+  let exb = StringBuilder(size_hint=0)
+  iter.each(x => exb.write_char(x))
+  inspect(exb)
+}
+
+///|
+test "singleton" {
+  let iter = Iter::singleton('1')
+  let exb = StringBuilder(size_hint=0)
+  iter.each(x => exb.write_char(x))
+  inspect(exb, content="1")
+}
+
+///|
+test "repeat" {
+  let iter = Iter::repeat('1')
+  let exb = StringBuilder(size_hint=0)
+  for n in iter[:3] {
+    exb.write_char(n)
+  }
+  inspect(exb, content="111")
+}
+
+///|
+test "count" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  @test.assert_eq(iter.count(), 5)
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  @test.assert_eq(iter.length(), 5)
+}
+
+///|
+test "count_if" {
+  let iter = test_from_array([1, 2, 3, 4, 5, 6])
+  @test.assert_eq(iter.count_if(x => x % 2 == 0), 3)
+  let iter = test_from_array([1, 2, 3])
+  @test.assert_eq(iter.count_if(x => x > 99), 0)
+  let iter : Iter[Int] = Iter::empty()
+  @test.assert_eq(iter.count_if(_ => true), 0)
+}
+
+///|
+test "take" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.take(3).each(x => exb.write_char(x))
+  inspect(exb, content="123")
+  // normal take
+  let evaluated = []
+  let collected = (1).until(20).tap(x => evaluated.push(x)).take(10).collect()
+  debug_inspect(collected, content="[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]")
+  debug_inspect(evaluated, content="[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]")
+  // take with concat
+  let evaluated2 = []
+  let collected2a = (1).until(20).tap(i => evaluated2.push("a\{i}")).take(5)
+  let collected2b = (1).until(20).tap(i => evaluated2.push("b\{i}")).take(5)
+  let collected2 = collected2a.concat(collected2b).collect()
+  debug_inspect(collected2, content="[1, 2, 3, 4, 5, 1, 2, 3, 4, 5]")
+  debug_inspect(
+    evaluated2,
+    content=(
+      #|["a1", "a2", "a3", "a4", "a5", "b1", "b2", "b3", "b4", "b5"]
+    ),
+  )
+  // take 0 with concat
+  let evaluated3 = []
+  let collected3a = (1).until(20).tap(i => evaluated3.push("a\{i}")).take(0)
+  let collected3b = (1).until(20).tap(i => evaluated3.push("b\{i}")).take(5)
+  let collected3 = collected3a.concat(collected3b).collect()
+  debug_inspect(collected3, content="[1, 2, 3, 4, 5]")
+  debug_inspect(
+    evaluated3,
+    content=(
+      #|["b1", "b2", "b3", "b4", "b5"]
+    ),
+  )
+}
+
+///|
+test "take2" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.take(10).concat(Iter::repeat('6').take(1)).each(x => exb.write_char(x))
+  inspect(exb, content="123456")
+}
+
+///|
+test "take_while" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.take_while(x => x != '4').each(x => exb.write_char(x))
+  inspect(exb, content="123")
+}
+
+///|
+test "take_while2" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter
+  .take_while(x => x != '4')
+  .concat(Iter::singleton('6'))
+  .each(x => exb.write_char(x))
+  inspect(exb, content="1236")
+}
+
+///|
+test "take_while3" {
+  let iter = test_from_array([1, 2, 3])
+  let res = iter
+    .take_while(x => x != 4)
+    .concat(Iter::singleton(4))
+    .find_first(x => x % 2 == 0)
+  debug_inspect(res, content="Some(2)")
+}
+
+///|
+test "take_while4" {
+  let iter = test_from_array([1, 2, 3, 4, 5, 6])
+  let res = iter.take_while(x => x <= 5).take(4).fold(init=0, (x, y) => x + y)
+  inspect(res, content="10")
+}
+
+///|
+test "take_while5" {
+  let iter = test_from_array([1, 2, 3, 4, 5, 6])
+  let res = iter.take(4).take_while(x => x >= 5).fold((x, y) => x + y, init=0)
+  inspect(res, content="0")
+}
+
+///|
+test "map_while1" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let exb = StringBuilder(size_hint=0)
+  iter
+  .map_while(x => if x != 4 { Some(x) } else { None })
+  .each(x => exb.write_string("\{x}\n"))
+  inspect(exb, content="1\n2\n3\n")
+}
+
+///|
+test "map_while2" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let exb = StringBuilder(size_hint=0)
+  iter
+  .map_while(x => if x != 4 { Some(x) } else { None })
+  .concat(Iter::singleton(6))
+  .each(x => exb.write_string("\{x}\n"))
+  inspect(exb, content="1\n2\n3\n6\n")
+}
+
+///|
+test "map_while3" {
+  let iter = test_from_array([1, 2, 3])
+  let res = iter
+    .map_while(x => if x != 4 { Some(x) } else { None })
+    .concat(Iter::singleton(4))
+    .find_first(x => x % 2 == 0)
+  debug_inspect(res, content="Some(2)")
+}
+
+///|
+test "map_while4" {
+  let iter = test_from_array([1, 2, 3, 4, 5, 6])
+  let res = iter
+    .map_while(x => if x <= 5 { Some(x) } else { None })
+    .take(4)
+    .fold(init=0, (x, y) => x + y)
+  inspect(res, content="10")
+}
+
+///|
+test "map_while5" {
+  let iter = test_from_array([1, 2, 3, 4, 5, 6])
+  let res = iter
+    .take(4)
+    .map_while(x => if x >= 5 { Some(x) } else { None })
+    .fold((x, y) => x + y, init=0)
+  inspect(res, content="0")
+}
+
+///|
+test "drop" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.drop(3).each(x => exb.write_char(x))
+  inspect(exb, content="45")
+}
+
+///|
+test "sub" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let res = iter[1:4].collect()
+  debug_inspect(res, content="[2, 3, 4]")
+}
+
+///|
+test "drop_while" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.drop_while(x => x != '4').each(x => exb.write_char(x))
+  inspect(exb, content="45")
+}
+
+///|
+test "drop_while2" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let res = iter
+    .drop_while(x => x <= 3)
+    .concat(Iter::singleton(6))
+    .find_first(x => x % 3 == 0)
+  debug_inspect(res, content="Some(6)")
+}
+
+///|
+test "drop_while3" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let exb = StringBuilder(size_hint=0)
+  let res = iter
+    .drop_while(x => x < 3)
+    .concat(Iter::singleton(6))
+    .find_first(x => {
+      exb.write_char('x')
+      x % 3 == 0
+    })
+  // make sure the predicate in find_first is called only once
+  inspect(exb, content="x")
+  debug_inspect(res, content="Some(3)")
+}
+
+///|
+test "drop_while4" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let res = iter
+    .drop_while(x => x <= 3)
+    .concat(Iter::singleton(6))
+    .drop(3)
+    .find_first(x => x % 3 == 0)
+  debug_inspect(res, content="None")
+}
+
+///|
+test "filter" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.filter(x => x != '4').each(x => exb.write_char(x))
+  inspect(exb, content="1235")
+}
+
+///|
+test "map" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter
+  .map(x => (x.to_int() + 1).to_char().unwrap())
+  .each(x => exb.write_char(x))
+  inspect(exb, content="23456")
+}
+
+///|
+test "size_hint" {
+  let iter = [1, 2, 3].iter()
+  debug_inspect(iter.size_hint(), content="Some(3)")
+  debug_inspect(iter.next(), content="Some(1)")
+  debug_inspect(iter.size_hint(), content="Some(2)")
+  debug_inspect(iter.collect(), content="[2, 3]")
+  debug_inspect(iter.size_hint(), content="Some(0)")
+  debug_inspect([1, 2, 3].iter().map(x => x + 1).size_hint(), content="Some(3)")
+  debug_inspect(
+    [1, 2, 3].iter().mapi((i, x) => i + x).size_hint(),
+    content="Some(3)",
+  )
+  debug_inspect([1, 2, 3].iter().tap(_ => ()).size_hint(), content="Some(3)")
+  debug_inspect([1, 2, 3].iter().take(2).size_hint(), content="Some(2)")
+  debug_inspect([1, 2, 3].iter().take(5).size_hint(), content="Some(3)")
+  debug_inspect([1, 2, 3].iter().take(0).size_hint(), content="Some(0)")
+  debug_inspect([1, 2, 3].iter().drop(0).size_hint(), content="Some(3)")
+  debug_inspect([1, 2, 3].iter().drop(1).size_hint(), content="Some(2)")
+  debug_inspect([1, 2, 3].iter().drop(5).size_hint(), content="Some(0)")
+  debug_inspect(
+    [1, 2, 3].iter().concat([4, 5].iter()).size_hint(),
+    content="Some(5)",
+  )
+  debug_inspect(
+    [1, 2].iter().zip([3, 4, 5].iter()).size_hint(),
+    content="Some(2)",
+  )
+  debug_inspect(
+    [1, 2, 3].iter().zip([4, 5].iter()).size_hint(),
+    content="Some(2)",
+  )
+  let empty_left : Iter[Int] = Iter::empty()
+  debug_inspect(
+    empty_left.zip(Iter::new(() => Some(1))).size_hint(),
+    content="Some(0)",
+  )
+  let empty_right : Iter[Int] = Iter::empty()
+  debug_inspect(
+    Iter::new(() => Some(1)).zip(empty_right).size_hint(),
+    content="Some(0)",
+  )
+  debug_inspect(
+    Iter::new(() => Some(1)).zip([1].iter()).size_hint(),
+    content="None",
+  )
+  debug_inspect([1, 2, 3].iter().intersperse(0).size_hint(), content="Some(5)")
+  debug_inspect(
+    Iter::new(() => Some(1)).intersperse(0).size_hint(),
+    content="None",
+  )
+  debug_inspect([1, 2, 3].iter()[1:3].size_hint(), content="Some(2)")
+  debug_inspect([1, 2, 3].iter()[3:5].size_hint(), content="Some(0)")
+  debug_inspect(
+    Iter::new(() => Some(1)).view(start=2, end=1).size_hint(),
+    content="Some(0)",
+  )
+  debug_inspect(
+    Iter::new(() => Some(1)).view(start=1, end=3).size_hint(),
+    content="None",
+  )
+  debug_inspect([1, 2, 3].iter().filter(x => x > 1).size_hint(), content="None")
+  debug_inspect(
+    [1, 2, 3]
+    .iter()
+    .filter_map(x => if x > 1 { Some(x) } else { None })
+    .size_hint(),
+    content="None",
+  )
+  debug_inspect(
+    [1, 2, 3].iter().take_while(x => x < 3).size_hint(),
+    content="None",
+  )
+  let unknown : Iter[Int] = Iter::new(() => None)
+  let known_empty : Iter[Int] = Iter::new(() => None, size_hint=0)
+  debug_inspect(unknown.size_hint(), content="None")
+  debug_inspect(known_empty.size_hint(), content="Some(0)")
+  let mut i = 0
+  let too_small = Iter::new(
+    fn() {
+      if i < 3 {
+        i += 1
+        Some(i)
+      } else {
+        None
+      }
+    },
+    size_hint=1,
+  )
+  debug_inspect(too_small.collect(), content="[1, 2, 3]")
+  debug_inspect(too_small.size_hint(), content="Some(0)")
+  let too_large : Iter[Int] = Iter::new(() => None, size_hint=3)
+  debug_inspect(too_large.next(), content="None")
+  debug_inspect(too_large.size_hint(), content="Some(0)")
+  let negative_hint : Iter[Int] = Iter::new(() => None, size_hint=-1)
+  debug_inspect(negative_hint.size_hint(), content="Some(0)")
+}
+
+///|
+test "mapi" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter
+  .mapi((i, x) => (i + x.to_int()).to_char().unwrap())
+  .each(x => exb.write_char(x))
+  inspect(exb, content="13579")
+}
+
+///|
+test "filter_map" {
+  let arr = [1, 2, 3, 4, 5]
+  let r1 = arr
+    .iter()
+    .filter_map(x => if x < 3 { None } else { Some(x) })
+    .collect()
+  debug_inspect(r1, content="[3, 4, 5]")
+  let r2 : Array[Unit] = arr.iter().filter_map(_x => None).collect()
+  debug_inspect(r2, content="[]")
+  let r3 : Array[Unit] = [].iter().filter_map(x => Some(x)).collect()
+  debug_inspect(r3, content="[]")
+  // Test using next() directly to ensure the closure is executed
+  let it1 = [1, 2, 3, 4, 5]
+    .iter()
+    .filter_map(x => if x % 2 == 0 { Some(x * 10) } else { None })
+  debug_inspect(it1.next(), content="Some(20)")
+  debug_inspect(it1.next(), content="Some(40)")
+  debug_inspect(it1.next(), content="None")
+  // Test None branch inside while loop
+  let it2 = [1, 2, 3]
+    .iter()
+    .filter_map(x => if x == 2 { None } else { Some(x) })
+  debug_inspect(it2.next(), content="Some(1)")
+  debug_inspect(it2.next(), content="Some(3)")
+  debug_inspect(it2.next(), content="None")
+  // Test iter exhaustion (else branch)
+  let it3 : Iter[Unit] = [1].iter().filter_map(_ => None)
+  debug_inspect(it3.next(), content="None")
+}
+
+///|
+test "flat_map" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.flat_map(x => Iter::repeat(x).take(2)).each(x => exb.write_char(x))
+  inspect(exb, content="1122334455")
+}
+
+///|
+test "flat_map2" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.flat_map(x => Iter::singleton(x)).each(x => exb.write_char(x))
+  inspect(exb, content="12345")
+}
+
+///|
+test "fold" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let result = iter.fold((acc, x) => acc + x.to_int(), init=0) / 5
+  @test.assert_eq(result, '3')
+}
+
+///|
+test "find_first" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let result = iter.find_first(x => x > '3')
+  @test.assert_eq(result, Some('4'))
+  let result2 = iter.find_first(x => x > '5')
+  @test.assert_eq(result2, None)
+}
+
+///|
+test "find_first2" {
+  let iter = test_from_array([1, 2, 3]).concat(test_from_array([4, 5, 6]))
+  let result = iter.find_first(x => x % 2 == 0)
+  debug_inspect(result, content="Some(2)")
+}
+
+///|
+test "tap" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=0)
+  iter.tap(x => exb.write_char(x)).each(x => exb.write_char(x))
+  inspect(exb, content="1122334455")
+}
+
+///|
+test "concat" {
+  let iter1 = test_from_array(['1', '2', '3'])
+  let iter2 = test_from_array(['4', '5', '6'])
+  let combined_iter = Iter::concat(iter1, iter2)
+  let exb = StringBuilder(size_hint=0)
+  combined_iter.each(x => exb.write_char(x))
+  inspect(exb, content="123456")
+}
+
+///|
+test "zip" {
+  let numbers = (1).until(6)
+  let letters = ["a", "b", "c"].iter()
+  debug_inspect(
+    numbers.zip(letters).collect(),
+    content="[(1, \"a\"), (2, \"b\"), (3, \"c\")]",
+  )
+}
+
+///|
+test "zip alias combine" {
+  let numbers = (1).until(4)
+  let letters = ["x", "y", "z", "w"].iter()
+  debug_inspect(
+    numbers.combine(letters).collect(),
+    content="[(1, \"x\"), (2, \"y\"), (3, \"z\")]",
+  )
+}
+
+///|
+test "zip short-circuits when either side ends" {
+  let lhs_evaluated = []
+  let rhs_evaluated = []
+  let lhs = (1).until(10).tap(x => lhs_evaluated.push(x))
+  let rhs = [10, 20].iter().tap(x => rhs_evaluated.push(x))
+  debug_inspect(lhs.zip(rhs).collect(), content="[(1, 10), (2, 20)]")
+  debug_inspect(lhs_evaluated, content="[1, 2, 3]")
+  debug_inspect(rhs_evaluated, content="[10, 20]")
+}
+
+///|
+test "collect" {
+  let arr = ['1', '2', '3', '4', '5']
+  let iter = arr.iter()
+  let vec = iter.collect()
+  @test.assert_eq(vec, ['1', '2', '3', '4', '5'])
+}
+
+///|
+test "until" {
+  // edge cases
+  debug_inspect(
+    (0).until(10).take(100).to_array(),
+    content=(
+      #|[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ),
+  )
+  debug_inspect(
+    (100).until(10).take(100).to_array(),
+    content=(
+      #|[]
+    ),
+  )
+  debug_inspect(
+    (100).until(101, step=4).to_array(),
+    content=(
+      #|[100]
+    ),
+  )
+  debug_inspect(
+    (1).until(2, step=0).to_array(),
+    content=(
+      #|[]
+    ),
+  )
+  debug_inspect(
+    1.0.until(2.0, step=0).to_array(),
+    content=(
+      #|[]
+    ),
+  )
+  debug_inspect(
+    0L.until(10, step=0).to_array(),
+    content=(
+      #|[]
+    ),
+  )
+  // inclusive
+  debug_inspect(
+    (@int.MAX_VALUE - 2).until(@int.MAX_VALUE - 1).to_array(),
+    content=(
+      #|[2147483645]
+    ),
+  )
+  debug_inspect(
+    (@int.MAX_VALUE - 2).until(@int.MAX_VALUE - 1, inclusive=true).to_array(),
+    content=(
+      #|[2147483645, 2147483646]
+    ),
+  )
+  debug_inspect(
+    (@int.MAX_VALUE - 1).until(@int.MAX_VALUE).to_array(),
+    content=(
+      #|[2147483646]
+    ),
+  )
+  debug_inspect(
+    (@int.MAX_VALUE - 1)
+    .until(@int.MAX_VALUE, inclusive=true)
+    .concat([0].iter())
+    .to_array(),
+    content=(
+      #|[2147483646, 2147483647, 0]
+    ),
+  )
+  debug_inspect(
+    (@int.MAX_VALUE - 1).until(@int.MAX_VALUE).to_array(),
+    content=(
+      #|[2147483646]
+    ),
+  )
+  debug_inspect(
+    (@int.MAX_VALUE - 1).until(@int.MAX_VALUE, inclusive=true).to_array(),
+    content=(
+      #|[2147483646, 2147483647]
+    ),
+  )
+  debug_inspect(
+    (@int64.MAX_VALUE - 2)
+    .until(@int64.MAX_VALUE - 1L, inclusive=true)
+    .to_array(),
+    content=(
+      #|[9223372036854775805, 9223372036854775806]
+    ),
+  )
+  debug_inspect(
+    (@int64.MAX_VALUE - 1).until(@int64.MAX_VALUE, inclusive=true).to_array(),
+    content=(
+      #|[9223372036854775806, 9223372036854775807]
+    ),
+  )
+  debug_inspect(
+    0.0.until(1.0, step=0.1, inclusive=true).to_array(),
+    content=(
+      #|[
+      #|  0,
+      #|  0.1,
+      #|  0.2,
+      #|  0.30000000000000004,
+      #|  0.4,
+      #|  0.5,
+      #|  0.6,
+      #|  0.7,
+      #|  0.7999999999999999,
+      #|  0.8999999999999999,
+      #|  0.9999999999999999,
+      #|]
+    ),
+  )
+  debug_inspect(
+    0.0.until(1.0, step=0.1, inclusive=false).to_array(),
+    content=(
+      #|[
+      #|  0,
+      #|  0.1,
+      #|  0.2,
+      #|  0.30000000000000004,
+      #|  0.4,
+      #|  0.5,
+      #|  0.6,
+      #|  0.7,
+      #|  0.7999999999999999,
+      #|  0.8999999999999999,
+      #|  0.9999999999999999,
+      #|]
+    ),
+  )
+  debug_inspect(
+    0.0.until(10.0).to_array(),
+    content=(
+      #|[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ),
+  )
+  debug_inspect(
+    0.0.until(10.0, inclusive=true).to_array(),
+    content=(
+      #|[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    ),
+  )
+  // until
+  debug_inspect(
+    (0).until(10).take(5).concat((0).until(2)).to_array(),
+    content=(
+      #|[0, 1, 2, 3, 4, 0, 1]
+    ),
+  )
+  debug_inspect(
+    0x80000000L
+    .until(0x80000000L + 10L)
+    .take(5)
+    .concat((0x80000000L + 10L).until(0x80000000L + 20L).take(3))
+    .to_array(),
+    content=(
+      #|[
+      #|  2147483648,
+      #|  2147483649,
+      #|  2147483650,
+      #|  2147483651,
+      #|  2147483652,
+      #|  2147483658,
+      #|  2147483659,
+      #|  2147483660,
+      #|]
+    ),
+  )
+  debug_inspect(
+    0.0.until(10.0).take(5).concat(0.0.until(2.0)).to_array(),
+    content=(
+      #|[0, 1, 2, 3, 4, 0, 1]
+    ),
+  )
+  debug_inspect(
+    (-50).until(50, step=10).take(100).to_array(),
+    content=(
+      #|[-50, -40, -30, -20, -10, 0, 10, 20, 30, 40]
+    ),
+  )
+  debug_inspect(
+    0.1.until(0.4, step=0.1).take(5).to_array(),
+    content=(
+      #|[0.1, 0.2, 0.30000000000000004]
+    ),
+  )
+  debug_inspect(
+    0.1.until(0.3, step=0.1).to_array(),
+    content=(
+      #|[0.1, 0.2]
+    ),
+  )
+  debug_inspect(
+    0.1.until(0.4, step=0.1).take(5).to_array(),
+    content=(
+      #|[0.1, 0.2, 0.30000000000000004]
+    ),
+  )
+  debug_inspect(
+    0x80000000L.until(0x80000000L + 10L, step=2L).to_array(),
+    content=(
+      #|[2147483648, 2147483650, 2147483652, 2147483654, 2147483656]
+    ),
+  )
+  // step < 0
+  debug_inspect(
+    (10).until(0, step=-1).take(5).to_array(),
+    content=(
+      #|[10, 9, 8, 7, 6]
+    ),
+  )
+  debug_inspect(
+    0x80000000L.until(0x80000000L - 10L, step=-2L).take(5).to_array(),
+    content=(
+      #|[2147483648, 2147483646, 2147483644, 2147483642, 2147483640]
+    ),
+  )
+  debug_inspect(
+    0.0.until(-1.0, step=-0.1).take(5).to_array(),
+    content=(
+      #|[0, -0.1, -0.2, -0.30000000000000004, -0.4]
+    ),
+  )
+}
+
+///|
+test "each" {
+  let iter = test_from_array(['1', '2', '3', '4', '5'])
+  let exb = StringBuilder(size_hint=5)
+  iter.each(x => exb.write_char(x))
+  inspect(exb, content="12345")
+}
+
+///|
+test "eachi" {
+  let iter = test_from_array([1, 2, 3, 4, 5])
+  let exb = StringBuilder(size_hint=5)
+  iter.eachi((i, x) => exb.write_string((x + i).to_string()))
+  inspect(exb, content="13579")
+}
+
+///|
+test "intersperse early end" {
+  let iter = test_from_array([1, 2, 3])
+  let res = iter.intersperse(0).take(1).collect()
+  debug_inspect(res, content="[1]")
+}
+
+///|
+test "intersperse stops on separator" {
+  let iter = [1, 2].iter().intersperse(0)
+  let seen = []
+  for x in iter {
+    seen.push(x)
+    if x == 0 {
+      break
+    }
+  }
+  debug_inspect(seen, content="[1, 0]")
+}
+
+// For testing purposes
+
+///|
+fn[T] test_from_array(arr : Array[T]) -> Iter[T] {
+  arr.iter()
+}
+
+///|
+test "any" {
+  let iter = [1, 2, 3, 4, 5, 6] |> test_from_array
+  @test.assert_eq(iter.take(3).any(x => x < 4), true)
+  @test.assert_eq(iter.take(8).any(x => x < 7), true)
+  @test.assert_eq(iter.take(6).any(x => x < 7), true)
+  let iter = [1, 2, 3, 4, 5, 6] |> test_from_array
+  @test.assert_eq(iter.all(x => x < 4), false)
+  @test.assert_eq(iter.take(8).all(x => x < 7), true)
+}
+
+///|
+test "all" {
+  let iter = [1, 2, 3, 4, 5, 6] |> test_from_array
+  @test.assert_eq(iter.take(3).all(x => x < 4), true)
+  @test.assert_eq(iter.take(3).all(x => x < 2), false)
+  @test.assert_eq(iter.take(8).all(x => x < 7), true)
+  @test.assert_eq(iter.take(6).all(x => x < 7), true)
+}
+
+///|
+enum Tree {
+  Leaf(Int)
+  Node(Tree, Int, Tree)
+}
+
+///|
+fn Tree::iter(self : Tree) -> Iter[Int] {
+  let parents = []
+  let mut head = Some(self)
+  Iter::new(fn() {
+    for v = head {
+      match v {
+        Some(Leaf(x)) => {
+          head = None
+          break Some(x)
+        }
+        Some(Node(l, x, r)) => {
+          parents.push((x, r))
+          continue Some(l)
+        }
+        None if parents.pop() is Some((x, r)) => {
+          head = Some(r)
+          break Some(x)
+        }
+        None => break None
+      }
+    }
+  })
+}
+
+///|
+test "tree" {
+  // let tree = Node(Node(Leaf(1), Leaf(2)), Node(Leaf(3), Leaf(4)))
+  let tree = Node(Node(Leaf(1), 2, Leaf(3)), 4, Leaf(5))
+  let exb = StringBuilder(size_hint=0)
+  tree.iter().each(x => exb.write_string(x.to_string()))
+  inspect(exb, content="12345")
+}
+
+///|
+test "Iter::intersperse" {
+  debug_inspect(
+    [1, 2, 3].iter().intersperse(0).to_array(),
+    content=(
+      #|[1, 0, 2, 0, 3]
+    ),
+  )
+  debug_inspect(
+    [1, 2, 3, 4, 5, 6, 7, 8, 9].iter().intersperse(0).to_array(),
+    content=(
+      #|[1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0, 9]
+    ),
+  )
+  debug_inspect(
+    ([] : Array[Int]).iter().intersperse(0).to_array(),
+    content=(
+      #|[]
+    ),
+  )
+  debug_inspect(
+    [1].iter().intersperse(0).to_array(),
+    content=(
+      #|[1]
+    ),
+  )
+}
+
+///|
+test "Iter::last" {
+  debug_inspect([1, 2, 3].iter().last(), content="Some(3)")
+  debug_inspect([1].iter().last(), content="Some(1)")
+  debug_inspect(([] : Array[Int]).iter().last(), content="None")
+}
+
+///|
+test "Iter::head" {
+  debug_inspect([1, 2, 3].iter().head(), content="Some(1)")
+  debug_inspect([1].iter().head(), content="Some(1)")
+  debug_inspect(([] : Array[Int]).iter().head(), content="None")
+}
+
+///|
+test "Iter::as_view" {
+  debug_inspect(
+    [1, 2, 3].iter()[1:2].to_array(),
+    content=(
+      #|[2]
+    ),
+  )
+  debug_inspect(
+    [1, 2, 3].iter()[1:].to_array(),
+    content=(
+      #|[2, 3]
+    ),
+  )
+  debug_inspect(
+    [1, 2, 3].iter()[1:].to_array(),
+    content=(
+      #|[2, 3]
+    ),
+  )
+  debug_inspect(
+    [1, 2, 3].iter()[:].to_array(),
+    content=(
+      #|[1, 2, 3]
+    ),
+  )
+}
+
+///|
+test "Iter::enumerate" {
+  debug_inspect(
+    [1, 2, 3].iter2().to_array(),
+    content=(
+      #|[(0, 1), (1, 2), (2, 3)]
+    ),
+  )
+}
+
+///|
+test "next function - basic functionality" {
+  let iter = Iter::singleton(42)
+  debug_inspect(iter.next(), content="Some(42)")
+}
+
+///|
+test "next function - empty iter" {
+  let iter : Iter[Int] = Iter::empty()
+  debug_inspect(iter.next(), content="None")
+}
+
+///|
+test "next function - multiple elements" {
+  let iter = [1, 2, 3].iter()
+  debug_inspect(iter.next(), content="Some(1)")
+}
+
+///|
+test "next function - random cases" {
+  let iter1 = [10, 20, 30].iter()
+  debug_inspect(iter1.next(), content="Some(10)")
+  let iter2 = [-5, 0, 5].iter()
+  debug_inspect(iter2.next(), content="Some(-5)")
+  let iter3 = [100, 200, 300, 400].iter()
+  debug_inspect(iter3.next(), content="Some(100)")
+  let iter4 = [-10, -20, -30].iter()
+  debug_inspect(iter4.next(), content="Some(-10)")
+  let iter5 = [0, 0, 0].iter()
+  debug_inspect(iter5.next(), content="Some(0)")
+}
+
+///|
+test "@builtin.join/empty_iter" {
+  let empty_iter : Iter[String] = Iter::empty()
+  inspect(empty_iter.join(""), content="")
+}
+
+///|
+test "@builtin.join/single_element" {
+  let single_elem_iter : Iter[String] = Iter::singleton("Test")
+  inspect(single_elem_iter.join(""), content="Test")
+}
+
+///|
+test "@builtin.join/multiple_elements_with_separator" {
+  let iter : Iter[String] = ["A", "B", "C"].iter()
+  inspect(iter.join(","), content="A,B,C")
+}
+
+///|
+test "@builtin.join/multiple_elements_without_separator" {
+  let iter : Iter[String] = ["A", "B", "C"].iter()
+  inspect(iter.join(""), content="ABC")
+}
+
+///|
+test "@builtin.join/any_to_string_view_element" {
+  let iter : Iter[StringView] = ["a"[:], "b", "c"].iter()
+  inspect(iter.join("-"), content="a-b-c")
+}
+
+///|
+test "Iter::nth" {
+  let it = () => [1, 2, 3, 4, 5].iter()
+  debug_inspect(it().nth(2), content="Some(3)")
+  debug_inspect(it().nth(4), content="Some(5)")
+  debug_inspect(it().nth(5), content="None")
+  debug_inspect(it().nth(-1), content="None")
+  debug_inspect(it().concat(it()).nth(5), content="Some(1)")
+  debug_inspect(it().concat(it()).nth(10), content="None")
+  debug_inspect(it().drop(1).nth(3), content="Some(5)")
+  debug_inspect(it().drop(1).nth(4), content="None")
+  debug_inspect(it().take(1).nth(1), content="None")
+  debug_inspect(it().take(2).nth(1), content="Some(2)")
+}
+
+///|
+test "@builtin.Iter::maximum" {
+  // Basic functionality with integers
+  debug_inspect([1, 2, 3, 4, 5].iter().maximum(), content="Some(5)")
+  // With negative numbers
+  debug_inspect([-5, -3, -1, -10].iter().maximum(), content="Some(-1)")
+  // Single element
+  debug_inspect([42].iter().maximum(), content="Some(42)")
+  // Empty iter should return None
+  let empty_iter : Iter[Int] = Iter::empty()
+  debug_inspect(empty_iter.maximum(), content="None")
+}
+
+///|
+test "@builtin.Iter::minimum" {
+  // Test with normal sequence
+  let arr = [3, 1, 4, 1, 5].iter()
+  debug_inspect(arr.minimum(), content="Some(1)")
+
+  // Test with single element
+  let single = [42].iter()
+  debug_inspect(single.minimum(), content="Some(42)")
+
+  // Test with empty sequence
+  let empty : Iter[Int] = Iter::empty()
+  debug_inspect(empty.minimum(), content="None")
+}
+
+///|
+test "Iter::intersperse with early termination" {
+  let iter = [1, 2, 3].iter()
+  let result = iter.intersperse(0).take(3).collect()
+  debug_inspect(result, content="[1, 0, 2]")
+}
+
+///|
+test "Iter::iter method" {
+  let original = [1, 2, 3].iter()
+  let result = original.iter().collect()
+  debug_inspect(result, content="[1, 2, 3]")
+}
+
+///|
+test "Iter::contains method" {
+  let iter = [1, 2, 3, 4, 5].iter()
+  inspect(iter.contains(3), content="true")
+  inspect(iter.contains(6), content="false")
+}
+
+///|
+test "Iter::flatten method" {
+  let nested = [[1, 2], [3, 4], [5, 6]].iter().map(x => x.iter())
+  let flattened = nested.flatten().collect()
+  debug_inspect(flattened, content="[1, 2, 3, 4, 5, 6]")
+}
+
+///|
+test "Iter::add operator" {
+  let iter1 = [1, 2, 3].iter()
+  let iter2 = [4, 5, 6].iter()
+  let result = (iter1 + iter2).collect()
+  debug_inspect(result, content="[1, 2, 3, 4, 5, 6]")
+}
+
+///|
+test "Float::until with step=0" {
+  let result = 1.0.until(2.0, step=0.0).collect()
+  debug_inspect(result, content="[]")
+}
+
+///|
+test "Float::until basic test" {
+  let result = 0.0.until(3.0, step=1.0).collect()
+  debug_inspect(result, content="[0, 1, 2]")
+}
+
+///|
+test "Float::until with early termination" {
+  let result = 0.0.until(10.0).take(3).collect()
+  debug_inspect(result, content="[0, 1, 2]")
+}
+
+///|
+test "Double::until with large numbers" {
+  let result = 1000000.0.until(2000000.0, step=500000.0).collect()
+  debug_inspect(result, content="[1000000, 1500000]")
+}
+
+///|
+test "Double::until with NaN step" {
+  let values = []
+  for x in 1.0.until(1.0, step=@double.not_a_number, inclusive=true) {
+    values.push(x)
+  }
+  debug_inspect(values, content="[1]")
+}
+
+///|
+test "Float::until with early break" {
+  for i in 0.0.until(10.0) {
+    if i > 2.0 {
+      break
+    }
+  }
+  // No assertion needed, just verifying that it doesn't crash
+}
+
+///|
+test "Float::until negative step" {
+  let result = 10.0.until(0.0, step=-2.0).collect()
+  debug_inspect(result, content="[10, 8, 6, 4, 2]")
+}
+
+///|
+// test "group_by with consecutive identical elements" {
+//   let iter = [1, 1, 2, 2, 3, 3].iter()
+//   let grouped = iter.group_by((x) => { x })
+//   @test.assert_eq(grouped.get(1), Some([1, 1]))
+//   @test.assert_eq(grouped.get(2), Some([2, 2]))
+//   @test.assert_eq(grouped.get(3), Some([3, 3]))
+// }
+
+///|
+// test "group_by with non-consecutive identical elements" {
+//   let iter = [1, 2, 1, 3, 2, 1].iter()
+//   let grouped = iter.group_by((x) => { x })
+//   @test.assert_eq(grouped.get(1), Some([1, 1, 1]))
+//   @test.assert_eq(grouped.get(2), Some([2, 2]))
+//   @test.assert_eq(grouped.get(3), Some([3]))
+// }
+
+///|
+// test "group_by with empty input" {
+//   let iter : Iter[Int] = Iter::empty()
+//   let grouped = iter.group_by((x) => { x })
+//   @test.assert_eq(grouped.length(), 0)
+// }
+
+///|
+// test "group_by with single element input" {
+//   let iter = [42].iter()
+//   let grouped = iter.group_by((x) => { x })
+//   @test.assert_eq(grouped.get(42), Some([42]))
+// }
+
+///|
+// test "group_by with custom key function" {
+//   let iter = [1, 2, 3, 4].iter()
+//   let grouped = iter.group_by((x) => { x % 2 })
+//   @test.assert_eq(grouped.get(0), Some([2, 4]))
+//   @test.assert_eq(grouped.get(1), Some([1, 3]))
+// }
+
+///|
+// test "group_by with strings" {
+//   let iter = ["apple", "avocado", "banana", "cherry", "blueberry"].iter()
+//   let grouped = iter.group_by((s) => { s.charcode_at(0) })
+//   @test.assert_eq(grouped.get('a'), Some(["apple", "avocado"]))
+//   @test.assert_eq(grouped.get('b'), Some(["banana", "blueberry"]))
+//   @test.assert_eq(grouped.get('c'), Some(["cherry"]))
+// }
+
+///|
+// test "group_by with complex objects" {
+//   struct Person {
+//     name : String
+//     age : Int
+//   }
+//   let people = [
+//     Person::{ name: "Alice", age: 25 },
+//     Person::{ name: "Bob", age: 25 },
+//     Person::{ name: "Charlie", age: 30 },
+//     Person::{ name: "Dave", age: 35 },
+//     Person::{ name: "Eve", age: 30 },
+//   ].iter()
+//   let grouped = people.group_by((p) => { p.age })
+//   let groups = grouped.values().map((a) => { a.map((p) => { p.name }) }).collect()
+//   @test.assert_eq(groups, [["Alice", "Bob"], ["Charlie", "Eve"], ["Dave"]])
+// }
+
+///|
+test "iter2" {
+  let iter : Iter[Int] = [].iter()
+  for _, _ in iter.iter2() {
+    assert_true(false)
+  }
+  let iter = [0, 1, 2].iter().iter2()
+  while iter.next() is Some((i, x)) {
+    @test.assert_eq(i, x)
+  }
+  let iter = [0, 1, 2].iter()
+  for i, x in iter.iter2() {
+    @test.assert_eq(i, x)
+  }
+}
+
+///|
+test "Iter::iter2" {
+  let iter = [0, 1, 2].iter()
+  for i, x in iter.iter2() {
+    @test.assert_eq(i, x)
+  }
+  for i, x in iter {
+    @test.assert_eq(i, x)
+  }
+}
+
+///|
+test "Iter::to_json and any on empty" {
+  let iter = [1, 2, 3].iter()
+  @json.json_inspect(ToJson::to_json(iter), content=[1, 2, 3])
+  let empty : Iter[Int] = Iter::empty()
+  inspect(empty.any(_ => true), content="false")
+}
+
+///|
+test "Iter::map_while empty and last" {
+  let empty : Iter[Int] = Iter::empty()
+  debug_inspect(empty.map_while(_ => Some(1)).collect(), content="[]")
+  debug_inspect([1, 2, 3].iter().last(), content="Some(3)")
+  let empty_last : Iter[Int] = Iter::empty()
+  debug_inspect(empty_last.last(), content="None")
+}
+
+///|
+test "Iter::maximum" {
+  debug_inspect([1, 3, 2].iter().maximum(), content="Some(3)")
+  let empty : Iter[Int] = Iter::empty()
+  debug_inspect(empty.maximum(), content="None")
+}
+
+///|
+test "Iter::view variants" {
+  debug_inspect([1, 2, 3].iter().view(start=-1).collect(), content="[1, 2, 3]")
+  debug_inspect([1, 2, 3].iter()[:2].collect(), content="[1, 2]")
+  debug_inspect([1, 2, 3].iter()[1:].collect(), content="[2, 3]")
+  debug_inspect([1, 2, 3, 4].iter()[1:3].collect(), content="[2, 3]")
+  debug_inspect([1, 2, 3].iter()[2:2].collect(), content="[]")
+  debug_inspect([1, 2, 3].iter()[1:0].collect(), content="[]")
+}
+
+///|
+test "Iter::iter and Iter2 conversions" {
+  debug_inspect([1, 2].iter().iter().collect(), content="[1, 2]")
+  let pairs = ['a', 'b']
+    .iter2()
+    .iter()
+    .map(pair => {
+      let (i, ch) = pair
+      "\{i}:\{ch}"
+    })
+    .collect()
+  debug_inspect(pairs, content="[\"0:a\", \"1:b\"]")
+  let buf = StringBuilder()
+  let iter2 = ['x', 'y'].iter2().iter2()
+  while iter2.next() is Some((_, ch)) {
+    buf.write_char(ch)
+  }
+  inspect(buf.to_string(), content="xy")
+}

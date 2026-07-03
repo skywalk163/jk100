@@ -1,0 +1,65 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+test {
+  @json.json_inspect(1, content=1)
+}
+
+///|
+test {
+  @json.json_inspect({ "x": 1 }, content={ "x": 1 })
+}
+
+///|
+struct P {
+  x : Int
+  y : Int
+  color : Color
+} derive(ToJson)
+
+///|
+enum Color {
+  Red
+  Green
+  Blue
+} derive(ToJson)
+
+///|
+struct Line {
+  p1 : P
+  p2 : P
+  color : Color
+} derive(ToJson)
+
+///|
+test "json inspect" {
+  let p1 = { x: 0, y: 0, color: Red }
+  let p2 = { x: 1, y: 2, color: Green }
+  @json.json_inspect(p1, content={ "x": 0, "y": 0, "color": "Red" })
+  let line = { p1, p2, color: Blue }
+  @json.json_inspect(line, content={
+    "p1": { "x": 0, "y": 0, "color": "Red" },
+    "p2": { "x": 1, "y": 2, "color": "Green" },
+    "color": "Blue",
+  })
+}
+
+///|
+test "json inspect error paths" {
+  ignore(expect_error(() => @json.json_inspect(1), "expected default mismatch"))
+  ignore(
+    expect_error(() => @json.json_inspect(1, content=2), "expected mismatch"),
+  )
+}

@@ -1,0 +1,213 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+test "inspect" {
+  @debug.debug_inspect(
+    Some("msg"),
+    content=(
+      #|Some("msg")
+    ),
+  )
+  @debug.debug_inspect(
+    ["data1", "data2"],
+    content=(
+      #|["data1", "data2"]
+    ),
+  )
+}
+
+///|
+test "debug repr for json" {
+  @debug.debug_inspect(Json::null(), content="Null")
+  @debug.debug_inspect(Json::boolean(true), content="True")
+  @debug.debug_inspect(
+    Json::number(@double.infinity, repr="1e999999999"),
+    content=(
+      #|Number(Infinity, repr=Some("1e999999999"))
+    ),
+  )
+  @debug.debug_inspect(
+    Json::object({ "nested": Json::array([Json::number(1.0), Json::null()]) }),
+    content=(
+      #|Object({ "nested": Array([Number(1), Null]) })
+    ),
+  )
+}
+
+///|
+fn output(f : () -> Unit raise Error) -> StringView {
+  try {
+    f()
+    "ok"
+  } catch {
+    Failure::Failure(s) =>
+      if s =~ (re"FAILED:", after=next) {
+        "FAILED:\{next}"
+      } else {
+        s
+      }
+    e =>
+      if "\{e}" =~ (re"FAILED:", after=next) {
+        "FAILED:\{next}"
+      } else {
+        "\{e}"
+      }
+  }
+}
+
+///|
+test "assert_eq" {
+  inspect(output(() => @debug.assert_eq(1, 1)), content="ok")
+  inspect(
+    output(() => @debug.assert_eq(1, 2)),
+    content=(
+      #|FAILED: `1 != 2`
+      #|diff:
+      #|-1 +2
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq("a", "b")),
+    content=(
+      #|FAILED: `"a" != "b"`
+      #|diff:
+      #|-"a" +"b"
+    ),
+  )
+  inspect(output(() => @debug.assert_eq([1, 2, 3], [1, 2, 3])), content="ok")
+  inspect(
+    output(() => @debug.assert_eq([1, 2, 3], [1, 222, 3])),
+    content=(
+      #|FAILED: `[1, 2, 3] != [1, 222, 3]`
+      #|diff:
+      #|[1, -2 +222, 3]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq((true, "string", 123), (true, "s", 1))),
+    content=(
+      #|FAILED: `(true, "string", 123) != (true, "s", 1)`
+      #|diff:
+      #|(true, -"string" +"s", -123 +1)
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq({ "k1": 1.0, "k2": 2 }, { "k1": 2, "k3": 5 })),
+    content=(
+      #|FAILED: `{ "k1": 1, "k2": 2 } != { "k1": 2, "k3": 5 }`
+      #|diff:
+      #|{ "k1": -1 +2, -"k2": 2 +"k3": 5 }
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq(1, 2, msg="numbers mismatch")),
+    content="FAILED: numbers mismatch",
+  )
+  inspect(
+    output(() => @debug.assert_eq(Some(1), Some(2))),
+    content=(
+      #|FAILED: `Some(1) != Some(2)`
+      #|diff:
+      #|Some(-1 +2)
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq(Result::Ok(1), Err("e"))),
+    content=(
+      #|FAILED: `Ok(1) != Err("e")`
+      #|diff:
+      #|-Ok(1) +Err("e")
+    ),
+  )
+}
+
+///|
+test "assert_eq for arrays" {
+  inspect(
+    output(() => @debug.assert_eq([1, 2], [1, 2, 3])),
+    content=(
+      #|FAILED: `[1, 2] != [1, 2, 3]`
+      #|diff:
+      #|[1, 2, +3]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq([1, 2], [1, 2, 3, 4])),
+    content=(
+      #|FAILED: `[1, 2] != [1, 2, 3, 4]`
+      #|diff:
+      #|[1, 2, +3, +4]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq([1, 2, 3], [1, 2])),
+    content=(
+      #|FAILED: `[1, 2, 3] != [1, 2]`
+      #|diff:
+      #|[1, 2, -3]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq([1, 2, 3, 4], [1, 2])),
+    content=(
+      #|FAILED: `[1, 2, 3, 4] != [1, 2]`
+      #|diff:
+      #|[1, 2, -3, -4]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq([1, 2, 3, 4], [1, 4])),
+    content=(
+      #|FAILED: `[1, 2, 3, 4] != [1, 4]`
+      #|diff:
+      #|[1, -2 +4, -3, -4]
+    ),
+  )
+  inspect(
+    output(() => @debug.assert_eq([1, 4], [1, 2, 3, 4])),
+    content=(
+      #|FAILED: `[1, 4] != [1, 2, 3, 4]`
+      #|diff:
+      #|[1, -4 +2, +3, +4]
+    ),
+  )
+}
+
+///|
+test "repr" {
+  let v = "3"
+  inspect(
+    "hello \{Debug::to_repr(v)}",
+    content=(
+      #|hello "3"
+    ),
+  )
+}
+
+///|
+test "repr alias: prelude-visible shortcut for @debug.to_string" {
+  // `repr` is the prelude-exported alias for `@debug.to_string`. Both
+  // names resolve to the same function and produce the same Debug-style
+  // string. Strings render quoted (unlike Show), tuples / arrays render
+  // structurally.
+  assert_eq(repr("hi"), "\"hi\"")
+  assert_eq(repr('a'), "'a'")
+  assert_eq(repr([1, 2, 3]), "[1, 2, 3]")
+  assert_eq(repr((1, "x")), "(1, \"x\")")
+  // Aliases agree.
+  assert_eq(repr(42), @debug.to_string(42))
+  assert_eq(repr("hi"), @debug.to_string("hi"))
+  assert_eq(repr([1, 2]), @debug.to_string([1, 2]))
+}

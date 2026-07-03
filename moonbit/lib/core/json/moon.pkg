@@ -1,0 +1,18 @@
+import {
+  "moonbitlang/core/array",
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/char",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/double",
+  "moonbitlang/core/float",
+  "moonbitlang/core/internal/strconv" @internal/strconv,
+  "moonbitlang/core/option",
+  "moonbitlang/core/buffer",
+}
+
+import {
+  "moonbitlang/core/result",
+  "moonbitlang/core/unit",
+  "moonbitlang/core/bigint",
+  "moonbitlang/core/bench",
+} for "test"

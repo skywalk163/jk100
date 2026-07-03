@@ -1,0 +1,10 @@
+import {
+  "moonbitlang/core/builtin",
+  "moonbitlang/core/int16",
+}
+
+import {
+  "moonbitlang/core/char",
+  "moonbitlang/core/debug",
+  "moonbitlang/core/json",
+} for "test"

@@ -1,0 +1,116 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// when we write the string into the buffer
+// we assume the string is utf16 and blit
+// we assume the bytes (in valid region [0, len)) is utf16
+// so that
+
+///|
+test "stringbuilder" {
+  let buf = StringBuilder()
+  buf.write_string("hello")
+  buf.write_char(' ')
+  buf.write_view("world"[:3])
+  inspect(buf.to_string(), content="hello wor")
+}
+
+///|
+test "is_empty method" {
+  let buf = StringBuilder()
+  inspect(buf.is_empty(), content="true")
+  buf.write_string("Test")
+  inspect(buf.is_empty(), content="false")
+  buf.reset()
+  inspect(buf.is_empty(), content="true")
+}
+
+///|
+test "reset does not mutate returned string" {
+  let buf = StringBuilder(size_hint=10)
+  buf.write_string("hello")
+  let first = buf.to_string()
+  buf.reset()
+  buf.write_string("bye")
+  inspect(first, content="hello")
+  inspect(buf.to_string(), content="bye")
+}
+
+///|
+test {
+  let data = ["a", "b", "c", "hello world"]
+  @json.json_inspect(
+    data.map(fn(s) {
+      let sb = StringBuilder()
+      sb.write_string(s)
+      sb.to_string()
+    }),
+    content=["a", "b", "c", "hello world"],
+  )
+  // @test.assert_eq({ let sb = StringBuilder(); sb.write_string("hello"); sb.to_string() }, "hello")
+}
+
+///|
+test "write_iter" {
+  let str = "Hello🤣🤣🤣"
+  let sb = StringBuilder()
+  sb.write_iter(str.iter())
+  inspect(sb.to_string(), content="Hello🤣🤣🤣")
+  let str_view = str[1:7]
+  sb.write_iter(str_view.iter())
+  inspect(sb.to_string(), content="Hello🤣🤣🤣ello🤣")
+}
+
+///|
+test "StringBuilder::write_stringview" {
+  let str = "Hello🤣🤣🤣"
+  let sb = StringBuilder()
+
+  // Test basic substring
+  let str_view = str[1:7]
+  sb.write_stringview(str_view)
+  inspect(sb.to_string(), content="ello🤣")
+
+  // Test multiple writes
+  sb.write_stringview(str[0:5])
+  inspect(sb.to_string(), content="ello🤣Hello")
+
+  // Test empty view
+  sb.reset()
+  sb.write_stringview(str[5:5])
+  inspect(sb.to_string(), content="")
+
+  // Test full string view
+  sb.write_stringview(str[0:str.length()])
+  inspect(sb.to_string(), content="Hello🤣🤣🤣")
+
+  // Test with ASCII only
+  let ascii = "world"
+  sb.reset()
+  sb.write_stringview(ascii[1:4])
+  inspect(sb.to_string(), content="orl")
+}
+
+///|
+test "panic StringBuilder::write_char with invalid code point" {
+  let sb = StringBuilder()
+  sb.write_char((0x110000).unsafe_to_char()) |> ignore
+}
+
+///|
+test "StringBuilder::write" {
+  let sb = StringBuilder()
+  sb.write("abc\n")
+  @test.assert_eq(sb.to_string(), "abc\n")
+}

@@ -1,0 +1,85 @@
+name: nightly-check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  MOONC_RC_CONVENTION: borrow
+
+jobs:
+  nightly-check:
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    if: |
+      (github.event_name == 'pull_request' && startsWith(github.head_ref, 'nightly/')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          version: nightly
+
+      - name: run tests
+        timeout-minutes: 10
+        uses: ./.github/actions/test
+
+      - name: Test new allocator
+        timeout-minutes: 10
+        run: |
+          moon clean
+          moon test --target wasm
+        env:
+          MOONC_INTERNAL_PARAMS: allocator = tlsf-mbt |
+
+      - name: check
+        timeout-minutes: 10
+        run: moon check --deny-warn
+
+      - name: moon bundle
+        run: moon bundle --all
+
+      - name: moon info
+        timeout-minutes: 10
+        run: |
+          moon info --target wasm,wasm-gc,js,native
+          git diff
+
+      - name: check core size
+        timeout-minutes: 10
+        run: find ./target -name '*.core' | xargs ls -lh
+
+      - name: format diff
+        timeout-minutes: 10
+        run: |
+          moon fmt
+          git diff
+
+  nightly-native-opt-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    if: |
+      (github.event_name == 'pull_request' && startsWith(github.head_ref, 'nightly/')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    continue-on-error: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          version: nightly
+
+      - name: moon version
+        run: |
+          moon version --all
+
+      - name: run native release tests
+        timeout-minutes: 10
+        uses: ./.github/actions/test-native-release

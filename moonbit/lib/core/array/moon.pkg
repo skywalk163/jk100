@@ -1,0 +1,18 @@
+import {
+  "moonbitlang/core/builtin",
+}
+
+import {
+  "moonbitlang/core/char",
+  "moonbitlang/core/debug",
+} for "test"
+
+options(
+  targets: {
+    "array_js.mbt": [ "js" ],
+    "array_nonjs.mbt": [ "not", "js" ],
+    "blit_js.mbt": [ "js" ],
+    "blit_nonjs.mbt": [ "not", "js" ],
+    "panic_test.mbt": [ "not", "native", "llvm" ],
+  },
+)

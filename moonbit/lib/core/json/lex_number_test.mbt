@@ -1,0 +1,166 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// shadow @json.json_inspect
+
+///| shadow
+
+///|
+test "parse invalid decimal exponent sign" {
+  debug_inspect(
+    expect_parse_error("1e", "expected InvalidEof"),
+    content=(
+      #|InvalidEof
+    ),
+  )
+}
+
+///|
+test "lex_zero invalid case" {
+  debug_inspect(
+    expect_parse_error("01", "expected InvalidChar"),
+    content=(
+      #|InvalidChar({ line: 1, column: 1 }, '1')
+    ),
+  )
+}
+
+///|
+test "parse numbers" {
+  // Basic float parsing
+  debug_inspect(@json.parse("123.45"), content="Number(123.45)")
+  debug_inspect(@json.parse("-123.45"), content="Number(-123.45)")
+
+  // Exponential notation
+  // Note: The actual format depends on the implementation details of Double.to_string()
+  let exp_plus = @json.parse("123.45e+10")
+  debug_inspect(exp_plus, content="Number(1234500000000)")
+  @builtin.inspect(exp_plus.stringify(), content="1234500000000")
+  let exp_minus = @json.parse("123.45e-10")
+  debug_inspect(exp_minus, content="Number(1.2345e-8)")
+  @builtin.inspect(exp_minus.stringify(), content="1.2345e-8")
+  let exp_upper_plus = @json.parse("123.45E+10")
+  @builtin.inspect(exp_upper_plus.stringify(), content="1234500000000")
+  let exp_upper_minus = @json.parse("123.45E-10")
+  @builtin.inspect(exp_upper_minus.stringify(), content="1.2345e-8")
+
+  // Very large number
+  debug_inspect(
+    @json.parse("1e999999999"),
+    content=(
+      #|Number(Infinity, repr=Some("1e999999999"))
+    ),
+  )
+}
+
+///|
+test "parse negative huge exponent" {
+  debug_inspect(
+    @json.parse("-1e999999999"),
+    content=(
+      #|Number(-Infinity, repr=Some("-1e999999999"))
+    ),
+  )
+}
+
+///|
+test "parse and stringify large integers" {
+  // Test integers at Int boundaries
+  let min_int = "-2147483648" // Int.min_value
+  let parsed_min = @json.parse("\{min_int}")
+  debug_inspect(parsed_min, content="Number(-2147483648)")
+  @builtin.inspect(parsed_min.stringify(), content="-2147483648")
+  let max_int = "2147483647" // Int.max_value
+  let parsed_max = @json.parse("\{max_int}")
+  debug_inspect(parsed_max, content="Number(2147483647)")
+  @builtin.inspect(parsed_max.stringify(), content="2147483647")
+
+  // Test integers beyond safe JavaScript integer precision (±2^53)
+  let beyond_js_safe = "9007199254740993" // 2^53 + 1
+  let parsed_beyond = @json.parse(beyond_js_safe)
+  debug_inspect(
+    parsed_beyond,
+    content=(
+      #|Number(Infinity, repr=Some("9007199254740993"))
+    ),
+  )
+  @builtin.inspect(parsed_beyond.stringify(), content="9007199254740993")
+
+  // Test very large integers
+  let very_large = "12345678901234567890123456789"
+  let parsed_large = @json.parse(very_large)
+  debug_inspect(
+    parsed_large,
+    content=(
+      #|Number(Infinity, repr=Some("12345678901234567890123456789"))
+    ),
+  )
+  @builtin.inspect(
+    parsed_large.stringify(),
+    content="12345678901234567890123456789",
+  )
+}
+
+///|
+test "parse and stringify large double" {
+  let very_large = "10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003.141592653589793238462643383279"
+  let parsed_large = @json.parse(very_large)
+  debug_inspect(
+    parsed_large,
+    content=(
+      #|Number(
+      #|  Infinity,
+      #|  repr=Some("10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003.141592653589793238462643383279"),
+      #|)
+    ),
+  )
+}
+
+///|
+test "parse number with huge exponent" {
+  // Exponent digit counts that exceed `Int` range must surface to the JSON
+  // lexer as a parse failure, so the value is preserved as `Infinity` with the
+  // original textual representation rather than being silently rounded.
+  let huge_pos = "1e999999999999999999999999999999999999"
+  debug_inspect(
+    @json.parse(huge_pos),
+    content=(
+      #|Number(Infinity, repr=Some("1e999999999999999999999999999999999999"))
+    ),
+  )
+  let huge_neg = "-1e999999999999999999999999999999999999"
+  debug_inspect(
+    @json.parse(huge_neg),
+    content=(
+      #|Number(
+      #|  -Infinity,
+      #|  repr=Some("-1e999999999999999999999999999999999999"),
+      #|)
+    ),
+  )
+  let tiny_pos = "1e-999999999999999999999999999999999999"
+  debug_inspect(
+    @json.parse(tiny_pos),
+    content=(
+      #|Number(0)
+    ),
+  )
+  let tiny_neg = "-1e-999999999999999999999999999999999999"
+  debug_inspect(
+    @json.parse(tiny_neg),
+    content=(
+      #|Number(0)
+    ),
+  )
+}

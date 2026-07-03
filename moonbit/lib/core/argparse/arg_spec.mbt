@@ -1,0 +1,257 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Behavior for flag args.
+///
+/// - `SetTrue` / `SetFalse` set a boolean value.
+/// - `Count` increments `Matches.flag_counts`.
+/// - `Help` / `Version` display output and exit successfully when triggered.
+#warnings("-deprecated_syntax")
+pub(all) enum FlagAction {
+  SetTrue
+  SetFalse
+  Count
+  Help
+  Version
+} derive(Eq, Show, @debug.Debug)
+
+///|
+/// Behavior for option args.
+///
+/// - `Set` keeps the last provided value.
+/// - `Append` keeps all provided values in order.
+#warnings("-deprecated_syntax")
+pub(all) enum OptionAction {
+  Set
+  Append
+} derive(Eq, Show, @debug.Debug)
+
+///|
+/// Unified argument model used by the parser internals.
+priv struct Arg {
+  // All
+  name : String
+  about : String?
+  env : String?
+  requires : Array[String]
+  conflicts_with : Array[String]
+  required : Bool
+  global : Bool
+  hidden : Bool
+  info : ArgInfo
+  multiple : Bool
+} derive(@debug.Debug)
+
+///|
+priv enum ArgInfo {
+  FlagInfo(
+    short~ : Char?,
+    long~ : String?,
+    action~ : FlagAction,
+    negatable~ : Bool
+  )
+  OptionInfo(
+    short~ : Char?,
+    long~ : String?,
+    action~ : OptionAction,
+    default_values~ : Array[String]?,
+    allow_hyphen_values~ : Bool
+  )
+  PositionalInfo(
+    num_args~ : ValueRange?,
+    default_values~ : Array[String]?,
+    allow_hyphen_values~ : Bool
+  )
+} derive(@debug.Debug)
+
+///|
+/// Declarative flag constructor wrapper.
+pub struct FlagArg {
+  priv arg : Arg
+} derive(@debug.Debug)
+
+///|
+/// Create a flag argument.
+///
+/// Notes:
+/// - `long` defaults to `name`.
+/// - Use `long=""` to disable the long form.
+/// - At least one of `short`, `long`, or `env` must be available.
+/// - `global=true` makes the flag available in subcommands.
+/// - `negatable=true` accepts `--no-<long>` for long flags.
+/// - If `env` is set, accepted boolean values are:
+///   `1`, `0`, `true`, `false`, `yes`, `no`, `on`, `off`.
+#alias(new, deprecated="Use `FlagArg()` instead")
+pub fn FlagArg::FlagArg(
+  name : StringView,
+  short? : Char,
+  long? : StringView = name,
+  about? : StringView,
+  action? : FlagAction = SetTrue,
+  env? : StringView,
+  requires? : ArrayView[String] = [],
+  conflicts_with? : ArrayView[String] = [],
+  required? : Bool = false,
+  global? : Bool = false,
+  negatable? : Bool = false,
+  hidden? : Bool = false,
+) -> FlagArg {
+  let name = name.to_owned()
+  let long = if long == "" { None } else { Some(long.to_owned()) }
+  let about = about.map(v => v.to_owned())
+  let env = env.map(v => v.to_owned())
+  {
+    arg: {
+      name,
+      about,
+      env,
+      global,
+      hidden,
+      requires: requires.to_owned(),
+      conflicts_with: conflicts_with.to_owned(),
+      required,
+      info: FlagInfo(short~, long~, action~, negatable~),
+      multiple: false,
+    },
+  }
+}
+
+///|
+/// Declarative option constructor wrapper.
+/// Named `OptionArg` to avoid shadowing the built-in `Option` type.
+pub struct OptionArg {
+  priv arg : Arg
+} derive(@debug.Debug)
+
+///|
+/// Create an option argument.
+///
+/// Notes:
+/// - `long` defaults to `name`.
+/// - Use `long=""` to disable the long form.
+/// - At least one of `short`, `long`, or `env` must be available.
+/// - Use `action=Append` to keep repeated occurrences.
+/// - `global=true` makes the option available in subcommands.
+/// - `allow_hyphen_values=true` allows values like `-1` or `--raw` to be
+///   consumed as this option's value when parsing argv.
+#alias(new, deprecated="Use `OptionArg()` instead")
+pub fn OptionArg::OptionArg(
+  name : StringView,
+  short? : Char,
+  long? : StringView = name,
+  about? : StringView,
+  action? : OptionAction = Set,
+  env? : StringView,
+  default_values? : ArrayView[String],
+  allow_hyphen_values? : Bool = false,
+  requires? : ArrayView[String] = [],
+  conflicts_with? : ArrayView[String] = [],
+  required? : Bool = false,
+  global? : Bool = false,
+  hidden? : Bool = false,
+) -> OptionArg {
+  let name = name.to_owned()
+  let long = if long == "" { None } else { Some(long.to_owned()) }
+  let about = about.map(v => v.to_owned())
+  let env = env.map(v => v.to_owned())
+  {
+    arg: {
+      name,
+      about,
+      env,
+      requires: requires.to_owned(),
+      conflicts_with: conflicts_with.to_owned(),
+      required,
+      global,
+      hidden,
+      info: OptionInfo(
+        short~,
+        long~,
+        action~,
+        default_values=default_values.map(values => values.to_owned()),
+        allow_hyphen_values~,
+      ),
+      multiple: action is Append,
+    },
+  }
+}
+
+///|
+/// Declarative positional constructor wrapper.
+pub struct PositionArg {
+  priv arg : Arg
+} derive(@debug.Debug)
+
+///|
+/// Create a positional argument.
+///
+/// Notes:
+/// - PositionArg order follows declaration order.
+/// - `num_args` controls accepted value count.
+/// - If `num_args` is omitted, the default is an optional single value
+///   (`0..=1`).
+/// - Use `num_args=ValueRange::single()` for a required single positional.
+/// - `allow_hyphen_values=true` allows leading-`-` tokens to be consumed as
+///   positional values (unless they match a declared option).
+/// - Tokens after `--` are always treated as positional values.
+#alias(new, deprecated="Use `PositionArg()` instead")
+pub fn PositionArg::PositionArg(
+  name : StringView,
+  about? : StringView,
+  env? : StringView,
+  default_values? : ArrayView[String],
+  num_args? : ValueRange,
+  allow_hyphen_values? : Bool = false,
+  requires? : ArrayView[String] = [],
+  conflicts_with? : ArrayView[String] = [],
+  global? : Bool = false,
+  hidden? : Bool = false,
+) -> PositionArg {
+  let name = name.to_owned()
+  let about = about.map(v => v.to_owned())
+  let env = env.map(v => v.to_owned())
+  {
+    arg: {
+      name,
+      about,
+      env,
+      requires: requires.to_owned(),
+      conflicts_with: conflicts_with.to_owned(),
+      required: false,
+      global,
+      hidden,
+      info: PositionalInfo(
+        num_args~,
+        default_values=default_values.map(values => values.to_owned()),
+        allow_hyphen_values~,
+      ),
+      multiple: range_allows_multiple(num_args),
+    },
+  }
+}
+
+///|
+fn arg_name(arg : Arg) -> String {
+  arg.name
+}
+
+///|
+fn range_allows_multiple(range : ValueRange?) -> Bool {
+  range is Some(r) &&
+  (match r.upper {
+    Some(upper) => upper > 1
+    None => true
+  })
+}

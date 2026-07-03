@@ -1,0 +1,19 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitlang/core/immut/internal/path"
+
+// Values
+pub fn[A : Hash] of(A) -> Path
+
+// Errors
+
+// Types and methods
+pub struct Path(UInt) derive(Eq)
+pub fn Path::idx(Self) -> Int
+pub fn Path::is_last(Self) -> Bool
+pub fn Path::next(Self) -> Self
+pub fn Path::push(Self, Int) -> Self
+
+// Type aliases
+
+// Traits
+

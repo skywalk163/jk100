@@ -1,0 +1,115 @@
+# `int16`
+
+This package provides a fixed-width 16-bit signed integer type.
+
+## Range and Constants
+
+The `Int16` type represents values from -32768 to 32767 (inclusive). The package provides these boundary values as constants:
+
+```mbt check
+///|
+test "int16 range" {
+  inspect(@int16.MIN_VALUE, content="-32768")
+  inspect(@int16.MAX_VALUE, content="32767")
+}
+```
+
+## Arithmetic Operations
+
+The `Int16` type supports standard arithmetic operations:
+
+```mbt check
+///|
+test "int16 arithmetic" {
+  let a : Int16 = 100
+  let b : Int16 = 50
+
+  // Basic arithmetic
+  inspect(a + b, content="150")
+  inspect(a - b, content="50")
+  inspect(a * b, content="5000")
+  inspect(a / b, content="2")
+
+  // Overflow behavior
+  let max = @int16.MAX_VALUE
+  let min = @int16.MIN_VALUE
+  inspect(max + 1, content="-32768") // Wraps around to MIN_VALUE
+  inspect(min - 1, content="32767") // Wraps around to MAX_VALUE
+}
+```
+
+## Bitwise Operations
+
+`Int16` supports standard bitwise operations:
+
+```mbt check
+///|
+test "int16 bitwise" {
+  let a : Int16 = 0b1100
+  let b : Int16 = 0b1010
+
+  // Bitwise AND, OR, XOR
+  inspect(a & b, content="8") // 0b1000
+  inspect(a | b, content="14") // 0b1110
+  inspect(a ^ b, content="6") // 0b0110
+
+  // Bit shifts
+  let x : Int16 = 8
+  inspect(x << 1, content="16") // Left shift
+  inspect(x >> 1, content="4") // Right shift
+}
+```
+
+## Comparison Operations
+
+`Int16` implements the `Compare` trait for total ordering:
+
+```mbt check
+///|
+test "int16 comparison" {
+  let a : Int16 = 100
+  let b : Int16 = 50
+  let c : Int16 = 100
+
+  // Equality
+  inspect(a == b, content="false")
+  inspect(a == c, content="true")
+
+  // Ordering
+  inspect(a > b, content="true")
+  inspect(b < c, content="true")
+
+  // Compare function returns -1, 0, or 1
+  inspect(a.compare(b), content="1")
+  inspect(b.compare(c), content="-1")
+  inspect(a.compare(c), content="0")
+}
+```
+
+## Default Value
+
+`Int16` implements the `Default` trait, with 0 as its default value:
+
+```mbt check
+///|
+test "int16 default" {
+  let x = Int16::default()
+  inspect(x, content="0")
+}
+```
+
+## Type Coercion and Conversion
+
+Integer literals can be coerced to `Int16` when the type is explicitly specified:
+
+```mbt check
+///|
+test "int16 coercion" {
+  let a : Int16 = 42 // Coercion from integer literal
+  let b : Int16 = 0xFF // Hexadecimal literal
+  let c : Int16 = 0b1111 // Binary literal
+  inspect(a, content="42")
+  inspect(b, content="255")
+  inspect(c, content="15")
+}
+```

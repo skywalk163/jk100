@@ -1,0 +1,125 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+pub impl[K, V] Default for SortedMap[K, V] with fn default() {
+  new()
+}
+
+///|
+pub impl[K : Eq, V : Eq] Eq for SortedMap[K, V] with fn equal(self, other) -> Bool {
+  if physical_equal(self, other) {
+    return true
+  }
+  guard self.length() == other.length() else { return false }
+  let iter = self.iter()
+  let iter1 = other.iter()
+  while iter.next() is Some(a) && iter1.next() is Some(b) {
+    guard a == b else { break false }
+  } nobreak {
+    true
+  }
+}
+
+///|
+pub impl[K : Compare, V : Compare] Compare for SortedMap[K, V] with fn compare(
+  self,
+  other,
+) -> Int {
+  guard self.length() == other.length() else {
+    return self.length() - other.length()
+  }
+  let iter = self.iter()
+  let iter1 = other.iter()
+  while iter.next() is Some(a) && iter1.next() is Some(b) {
+    let cmp = a.compare(b)
+    guard cmp is 0 else { break cmp }
+  } nobreak {
+    0
+  }
+}
+
+///|
+pub impl[K : @quickcheck.Arbitrary + Compare, V : @quickcheck.Arbitrary] @quickcheck.Arbitrary for SortedMap[
+  K,
+  V,
+] with fn arbitrary(size, rs) {
+  @quickcheck.Arbitrary::arbitrary(size, rs) |> from_array
+}
+
+///|
+pub impl[K : Hash, V : Hash] Hash for SortedMap[K, V] with fn hash_combine(
+  self,
+  hasher,
+) {
+  for e in self {
+    hasher.combine(e.0)
+    hasher.combine(e.1)
+  }
+}
+
+///|
+#deprecated("Use @debug.Debug instead of Show for debugging purposes. See https://github.com/moonbitlang/core/blob/main/debug/README.mbt.md")
+pub impl[K : Show, V : Show] Show for SortedMap[K, V]
+
+///|
+#warnings("-deprecated")
+pub impl[K : Show, V : Show] Show for SortedMap[K, V] with fn output(
+  self,
+  logger,
+) {
+  logger.write_iter(
+    self.iter(),
+    prefix="@immut/sorted_map.from_array([",
+    suffix="])",
+  )
+}
+
+///|
+pub impl[K : Show, V : ToJson] ToJson for SortedMap[K, V] with fn to_json(self) {
+  Json::object(
+    Map(
+      capacity=self.length(),
+      [
+        for k, v in self => (k.to_string(), v.to_json())
+      ],
+    ),
+  )
+}
+
+///|
+pub impl[V : @json.FromJson] @json.FromJson for SortedMap[String, V] with fn from_json(
+  json,
+  path,
+) {
+  guard json is Object(obj) else {
+    raise JsonDecodeError(
+      (path, "@immut/sorted_map.from_json: expected object"),
+    )
+  }
+  for k, v in obj; map = (new() : SortedMap[String, V]) {
+    continue map.add(k, V::from_json(v, path.add_key(k)))
+  } nobreak {
+    map
+  }
+}
+
+///|
+/// Create from `json`.
+#as_free_fn
+pub fn[V : @json.FromJson] SortedMap::from_json(
+  json : Json,
+) -> SortedMap[String, V] raise @json.JsonDecodeError {
+  @json.from_json(json)
+}

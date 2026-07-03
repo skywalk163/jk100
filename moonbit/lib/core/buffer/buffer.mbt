@@ -1,0 +1,1148 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Extensible buffer.
+///
+/// It provides accumulative concatenation of bytes in linear time.
+/// The capacity of buffer will automatically expand as necessary.
+///
+/// Note: StringBuilder is recommended for string concatenation in favor of
+/// Buffer, since it is optimized for all targets.
+/// # Usage
+///
+/// ```mbt nocheck
+///   let buf = Buffer(size_hint=100)
+///   buf.write_string_utf16le("Tes")
+///   buf.write_char_utf16le('t')
+///   inspect(
+///     buf.contents(), 
+///     content=(
+///       
+///   #|b"T\x00e\x00s\x00t\x00"
+///
+///     ),
+///   )
+/// ```
+#alias(T, deprecated)
+struct Buffer {
+  mut data : FixedArray[Byte]
+  mut len : Int
+}
+
+///|
+/// Expand the buffer size if capacity smaller than required space.
+fn Buffer::grow_if_necessary(self : Buffer, required : Int) -> Unit {
+  let start = if self.data.length() <= 0 { 1 } else { self.data.length() }
+  let enough_space = for space = start {
+    if space >= required {
+      break space
+    }
+    continue space * 2
+  }
+  if enough_space != self.data.length() {
+    let new_data = FixedArray::make_and_blit(
+      self.data,
+      allocate_len=enough_space,
+      init=Byte::default(),
+      len=self.len,
+    )
+    self.data = new_data
+  }
+}
+
+///|
+/// Returns the number of bytes currently stored in the buffer.
+///
+/// Parameters:
+///
+/// * `buffer`: The buffer to get the length from.
+///
+/// Returns the length of the buffer in bytes.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16le("Test")
+///   inspect(buf.length(), content="8") // each char takes 2 bytes in UTF-16
+/// }
+/// ```
+pub fn Buffer::length(self : Buffer) -> Int {
+  self.len
+}
+
+///|
+/// Returns whether the buffer is empty.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to check.
+///
+/// Returns `true` if the buffer is empty (i.e., contains no bytes), `false`
+/// otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   inspect(buf.is_empty(), content="true")
+///   buf.write_string_utf16le("test")
+///   inspect(buf.is_empty(), content="false")
+/// }
+/// ```
+pub fn Buffer::is_empty(self : Buffer) -> Bool {
+  self.len == 0
+}
+
+///|
+/// Creates a new extensible buffer with specified initial capacity. If the
+/// initial capacity is less than 1, the buffer will be initialized with capacity
+/// 1.
+///
+/// Parameters:
+///
+/// * `size_hint` : Initial capacity of the buffer in bytes. Defaults to 0.
+///
+/// Returns a new buffer of type `Buffer`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer(size_hint=10)
+///   inspect(buf.length(), content="0")
+///   buf.write_string_utf16le("test")
+///   inspect(buf.length(), content="8")
+/// }
+/// ```
+#deprecated("use `Buffer()` instead (with `Buffer` in scope via the prelude)")
+pub fn new(size_hint? : Int = 0) -> Buffer {
+  Buffer(size_hint~)
+}
+
+///|
+/// Creates a new extensible buffer. Enables the constructor-call syntax
+/// `Buffer()` (also `Buffer(size_hint=N)`) when `Buffer` is in scope, e.g.
+/// via the prelude.
+///
+/// Parameters:
+///
+/// * `size_hint` : Initial capacity of the buffer in bytes. Defaults to 0.
+///
+/// Returns a new `Buffer`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16le("test")
+///   inspect(buf.length(), content="8")
+/// }
+/// ```
+pub fn Buffer::Buffer(size_hint? : Int = 0) -> Buffer {
+  let initial = if size_hint < 1 { 1 } else { size_hint }
+  let data = FixedArray::make(initial, Byte::default())
+  { data, len: 0 }
+}
+
+///|
+/// Create a buffer from a bytes.
+pub fn from_bytes(bytes : BytesView) -> Buffer {
+  let val_len = bytes.length()
+  let buf = Buffer(size_hint=val_len)
+  // inline write_bytes, skip grow_if_necessary check
+  // SAFETY: known bytes size
+  buf.data.blit_from_bytes(0, bytes.data(), bytes.start_offset(), val_len)
+  buf.len = val_len
+  buf
+}
+
+///|
+/// Create a buffer from an array.
+pub fn from_array(arr : ArrayView[Byte]) -> Buffer {
+  let buf = Buffer(size_hint=arr.length())
+  for byte in arr {
+    // inline write_byte, skip grow_if_necessary check
+    // SAFETY: known array size
+    buf.data[buf.len] = byte
+    buf.len += 1
+  }
+  buf
+}
+
+///|
+/// Create a buffer from an iterator.
+pub fn from_iter(iter : Iter[Byte]) -> Buffer {
+  let buf = Buffer()
+  for byte in iter; capacity = buf.data.length() {
+    // inline write_byte and grow_if_necessary
+    // only call grow_if_necessary when necessary
+    let capacity = if buf.len == capacity {
+      buf.grow_if_necessary(capacity + 1)
+      buf.data.length()
+    } else {
+      capacity
+    }
+    buf.data[buf.len] = byte
+    buf.len += 1
+    continue capacity
+  }
+  buf
+}
+
+///|
+/// Writes a UTF-16LE encoded string into the buffer. The buffer will
+/// automatically grow if needed to accommodate the string.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `string` : The string to be written.
+
+///|
+/// This Logger impl currently writes UTF-16LE bytes for compatibility. After a
+/// breaking-change window, Buffer may implement Logger again with UTF-8
+/// semantics.
+#deprecated("Buffer's current Logger impl writes UTF-16LE bytes; use StringBuilder or explicit Buffer encoders. A future breaking release may restore it with UTF-8 semantics.", skip_current_package=true)
+pub impl Logger for Buffer
+
+///|
+pub impl Logger for Buffer with fn write_string(self, value) {
+  self.grow_if_necessary(self.len + value.length() * 2)
+  self.data.blit_from_string(self.len, value, 0, value.length())
+  self.len += value.length() * 2
+}
+
+///|
+/// Writes an unsigned 64-bit integer into the buffer in big-endian format (most
+/// significant byte first).
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The unsigned 64-bit integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint64_be(0xAABBCCDD11223344)
+///   // Bytes are written in big-endian order
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\xaa\xbb\xcc\xdd\x11\x223D"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint64_be(self : Buffer, value : UInt64) -> Unit {
+  self.grow_if_necessary(self.len + 8)
+  let offset = self.len
+  self.data[offset] = (value >> 56).to_byte()
+  self.data[offset + 1] = (value >> 48).to_byte()
+  self.data[offset + 2] = (value >> 40).to_byte()
+  self.data[offset + 3] = (value >> 32).to_byte()
+  self.data[offset + 4] = (value >> 24).to_byte()
+  self.data[offset + 5] = (value >> 16).to_byte()
+  self.data[offset + 6] = (value >> 8).to_byte()
+  self.data[offset + 7] = value.to_byte()
+  self.len += 8
+}
+
+///|
+/// Writes an unsigned 64-bit integer to the buffer in little-endian byte order.
+/// Each byte is written sequentially from least significant to most significant.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The UInt64 value to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint64_le(0x0123456789ABCDEF)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\xef\xcd\xab\x89gE#\x01"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint64_le(self : Buffer, value : UInt64) -> Unit {
+  self.grow_if_necessary(self.len + 8)
+  let offset = self.len
+  self.data[offset] = value.to_byte()
+  self.data[offset + 1] = (value >> 8).to_byte()
+  self.data[offset + 2] = (value >> 16).to_byte()
+  self.data[offset + 3] = (value >> 24).to_byte()
+  self.data[offset + 4] = (value >> 32).to_byte()
+  self.data[offset + 5] = (value >> 40).to_byte()
+  self.data[offset + 6] = (value >> 48).to_byte()
+  self.data[offset + 7] = (value >> 56).to_byte()
+  self.len += 8
+}
+
+///|
+/// Writes a 64-bit integer into the buffer in big-endian format, where the most
+/// significant byte is written first.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write into.
+/// * `value` : The 64-bit integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int64_be(0x0102030405060708L)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x01\x02\x03\x04\x05\x06\x07\x08"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_int64_be(self : Buffer, value : Int64) -> Unit {
+  self.write_uint64_be(value.reinterpret_as_uint64())
+}
+
+///|
+/// Writes a 64-bit signed integer to the buffer in little-endian byte order.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The 64-bit signed integer to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int64_le(-1L)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\xff\xff\xff\xff\xff\xff\xff\xff"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_int64_le(self : Buffer, value : Int64) -> Unit {
+  self.write_uint64_le(value.reinterpret_as_uint64())
+}
+
+///|
+/// Writes a 32-bit unsigned integer into the buffer in big-endian format (most
+/// significant byte first).
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The unsigned integer value to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint_be(0x12345678)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x124Vx"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint_be(self : Buffer, value : UInt) -> Unit {
+  self.grow_if_necessary(self.len + 4)
+  let offset = self.len
+  self.data[offset] = (value >> 24).to_byte()
+  self.data[offset + 1] = (value >> 16).to_byte()
+  self.data[offset + 2] = (value >> 8).to_byte()
+  self.data[offset + 3] = value.to_byte()
+  self.len += 4
+}
+
+///|
+/// Writes a 32-bit unsigned integer into the buffer in little-endian format. The
+/// integer is split into 4 bytes and written in order from least significant to
+/// most significant byte.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : A 32-bit unsigned integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint_le(0x12345678)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"xV4\x12"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint_le(self : Buffer, value : UInt) -> Unit {
+  self.grow_if_necessary(self.len + 4)
+  let offset = self.len
+  self.data[offset] = value.to_byte()
+  self.data[offset + 1] = (value >> 8).to_byte()
+  self.data[offset + 2] = (value >> 16).to_byte()
+  self.data[offset + 3] = (value >> 24).to_byte()
+  self.len += 4
+}
+
+///|
+/// Writes a 32-bit integer to the buffer in big-endian format. Big-endian means
+/// the most significant byte is written first.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The 32-bit integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int_be(0x12345678)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x124Vx"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_int_be(self : Buffer, value : Int) -> Unit {
+  self.write_uint_be(value.reinterpret_as_uint())
+}
+
+///|
+/// Writes a 32-bit integer into the buffer in little-endian format. The integer
+/// is first reinterpreted as an unsigned integer, then written as 4 bytes where
+/// the least significant byte is written first.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write into.
+/// * `value` : The integer value to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int_le(-1)
+///   inspect(buf.contents(), content="b\"\\xff\\xff\\xff\\xff\"")
+/// }
+/// ```
+pub fn Buffer::write_int_le(self : Buffer, value : Int) -> Unit {
+  self.write_uint_le(value.reinterpret_as_uint())
+}
+
+///|
+/// Writes a 16-bit unsigned integer into the buffer in big-endian format (most
+/// significant byte first).
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The unsigned 16-bit integer value to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint16_be(0x1234)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x124"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint16_be(self : Buffer, value : UInt16) -> Unit {
+  self.grow_if_necessary(self.len + 2)
+  let offset = self.len
+  self.data[offset] = (value.to_int() >> 8).to_byte()
+  self.data[offset + 1] = value.to_byte()
+  self.len += 2
+}
+
+///|
+/// Writes a 16-bit unsigned integer into the buffer in little-endian format. The
+/// integer is split into 2 bytes and written in order from least significant to
+/// most significant byte.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : A 16-bit unsigned integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_uint16_le(0x1234)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"4\x12"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_uint16_le(self : Buffer, value : UInt16) -> Unit {
+  self.grow_if_necessary(self.len + 2)
+  let offset = self.len
+  self.data[offset] = value.to_byte()
+  self.data[offset + 1] = (value.to_int() >> 8).to_byte()
+  self.len += 2
+}
+
+///|
+/// Writes a 16-bit integer to the buffer in big-endian format. Big-endian means
+/// the most significant byte is written first.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The 16-bit integer to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int16_be(0x1234)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x124"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_int16_be(self : Buffer, value : Int16) -> Unit {
+  self.grow_if_necessary(self.len + 2)
+  let offset = self.len
+  self.data[offset] = (value.to_int() >> 8).to_byte()
+  self.data[offset + 1] = value.to_byte()
+  self.len += 2
+}
+
+///|
+/// Writes a 16-bit integer into the buffer in little-endian format. The integer
+/// is written as 2 bytes where the least significant byte is written first.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write into.
+/// * `value` : The 16-bit integer value to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_int16_le(-1)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\xff\xff"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_int16_le(self : Buffer, value : Int16) -> Unit {
+  self.grow_if_necessary(self.len + 2)
+  let offset = self.len
+  self.data[offset] = value.to_byte()
+  self.data[offset + 1] = (value.to_int() >> 8).to_byte()
+  self.len += 2
+}
+
+///|
+/// Writes an IEEE 754 double-precision floating-point number into the buffer in
+/// big-endian format (most significant byte first).
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The double-precision floating-point number to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_double_be(1.0)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"?\xf0\x00\x00\x00\x00\x00\x00"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_double_be(self : Buffer, value : Double) -> Unit {
+  self.write_uint64_be(value.reinterpret_as_uint64())
+}
+
+///|
+/// Writes a double-precision floating-point number into the buffer in
+/// little-endian format.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The double-precision floating-point number to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_double_le(3.14)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\x1f\x85\xebQ\xb8\x1e\x09@"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_double_le(self : Buffer, value : Double) -> Unit {
+  self.write_uint64_le(value.reinterpret_as_uint64())
+}
+
+///|
+/// Writes a 32-bit floating-point number to the buffer in big-endian byte order.
+/// The float value is first reinterpreted as a 32-bit unsigned integer before
+/// writing.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The floating-point number to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_float_be(3.14)
+///   // In big-endian format, 3.14 is represented as [0x40, 0x48, 0xF5, 0xC3]
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"@H\xf5\xc3"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_float_be(self : Buffer, value : Float) -> Unit {
+  self.write_uint_be(value.reinterpret_as_uint())
+}
+
+///|
+/// Writes a Float value into the buffer in little-endian format. The float value
+/// is converted to its binary representation and written as four bytes.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The Float value to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_float_le(3.14)
+///   // The bytes are written in little-endian format
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"\xc3\xf5H@"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_float_le(self : Buffer, value : Float) -> Unit {
+  self.write_uint_le(value.reinterpret_as_uint())
+}
+
+///|
+/// Writes a string representation of any value that implements the `Show` trait
+/// into the buffer.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : Any value that implements the `Show` trait. The value will be
+/// converted to a string using its `to_string` method before being written to
+/// the buffer.
+#deprecated("Buffer::write_object writes UTF-16LE bytes; use write_utf8 or explicit Buffer encoders. A future breaking release may restore it with UTF-8 semantics.", skip_current_package=true)
+pub fn Buffer::write_object(self : Buffer, value : &Show) -> Unit {
+  self.write_string(value.to_string())
+}
+
+///|
+/// Writes the `Show` representation of any value into the buffer as UTF-8
+/// encoded bytes.
+///
+/// Parameters:
+///
+/// * `self` : The buffer to write to.
+/// * `value` : Any value that implements the `Show` trait. The value is
+/// converted to a string via `Show::to_string` and then encoded as UTF-8.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_utf8(42)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"42"
+///     ),
+///   )
+/// }
+/// ```
+#alias(write_bytes_interpolation)
+pub fn[T : Show] Buffer::write_utf8(self : Buffer, value : T) -> Unit {
+  self.write_string_utf8(value.to_string())
+}
+
+///|
+/// Writes a sequence of bytes into the buffer.
+///
+/// Parameters:
+///
+/// * `buffer` : An extensible buffer to write into.
+/// * `bytes` : The sequence of bytes to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_bytes(b"Test")
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"Test"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_bytes(self : Buffer, value : BytesView) -> Unit {
+  self.write_bytesview(value)
+}
+
+///|
+/// Writes a sequence of bytes from a BytesView into the buffer.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `value` : The View containing the bytes to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   let view = b"Test"[1:3]
+///   buf.write_bytesview(view)
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"es"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_bytesview(self : Buffer, value : BytesView) -> Unit {
+  let val_len = value.length()
+  self.grow_if_necessary(self.len + val_len)
+  self.data.blit_from_bytes(
+    self.len,
+    value.data(),
+    value.start_offset(),
+    value.length(),
+  )
+  self.len += val_len
+}
+
+///|
+/// Write a char into buffer as UTF8.
+pub fn Buffer::write_char_utf8(buf : Self, value : Char) -> Unit {
+  let code = value.to_uint()
+  match code {
+    _..<0x80 => {
+      buf.grow_if_necessary(buf.len + 1)
+      buf.data[buf.len] = ((code & 0x7F) | 0x00).to_byte()
+      buf.len += 1
+    }
+    _..<0x0800 => {
+      buf.grow_if_necessary(buf.len + 2)
+      buf.data[buf.len] = (((code >> 6) & 0x1F) | 0xC0).to_byte()
+      buf.data[buf.len + 1] = ((code & 0x3F) | 0x80).to_byte()
+      buf.len += 2
+    }
+    _..<0x010000 => {
+      buf.grow_if_necessary(buf.len + 3)
+      buf.data[buf.len] = (((code >> 12) & 0x0F) | 0xE0).to_byte()
+      buf.data[buf.len + 1] = (((code >> 6) & 0x3F) | 0x80).to_byte()
+      buf.data[buf.len + 2] = ((code & 0x3F) | 0x80).to_byte()
+      buf.len += 3
+    }
+    _..<0x110000 => {
+      buf.grow_if_necessary(buf.len + 4)
+      buf.data[buf.len] = (((code >> 18) & 0x07) | 0xF0).to_byte()
+      buf.data[buf.len + 1] = (((code >> 12) & 0x3F) | 0x80).to_byte()
+      buf.data[buf.len + 2] = (((code >> 6) & 0x3F) | 0x80).to_byte()
+      buf.data[buf.len + 3] = ((code & 0x3F) | 0x80).to_byte()
+      buf.len += 4
+    }
+    _ => abort("Char out of range")
+  }
+}
+
+///|
+/// Write a char into buffer as UTF16LE.
+pub fn Buffer::write_char_utf16le(buf : Self, value : Char) -> Unit {
+  let code = value.to_uint()
+  if code < 0x10000 {
+    buf.grow_if_necessary(buf.len + 2)
+    buf.data[buf.len + 0] = (code & 0xFF).to_byte()
+    buf.data[buf.len + 1] = (code >> 8).to_byte()
+    buf.len += 2
+  } else if code < 0x110000 {
+    let cp = code - 0x10000
+    let high = (cp >> 10) | 0xD800
+    let low = (cp & 0x3FF) | 0xDC00
+    buf.grow_if_necessary(buf.len + 4)
+    buf.data[buf.len + 0] = (high & 0xFF).to_byte()
+    buf.data[buf.len + 1] = (high >> 8).to_byte()
+    buf.data[buf.len + 2] = (low & 0xFF).to_byte()
+    buf.data[buf.len + 3] = (low >> 8).to_byte()
+    buf.len += 4
+  } else {
+    abort("Char out of range")
+  }
+}
+
+///|
+/// Write a char into buffer as UTF16BE.
+pub fn Buffer::write_char_utf16be(buf : Self, value : Char) -> Unit {
+  let code = value.to_uint()
+  if code < 0x10000 {
+    buf.grow_if_necessary(buf.len + 2)
+    buf.data[buf.len + 0] = (code >> 8).to_byte()
+    buf.data[buf.len + 1] = (code & 0xFF).to_byte()
+    buf.len += 2
+  } else if code < 0x110000 {
+    buf.grow_if_necessary(buf.len + 4)
+    let cp = code - 0x10000
+    let high = (cp >> 10) | 0xD800
+    let low = (cp & 0x3FF) | 0xDC00
+    buf.data[buf.len + 0] = (high >> 8).to_byte()
+    buf.data[buf.len + 1] = (high & 0xFF).to_byte()
+    buf.data[buf.len + 2] = (low >> 8).to_byte()
+    buf.data[buf.len + 3] = (low & 0xFF).to_byte()
+    buf.len += 4
+  } else {
+    abort("Char out of range")
+  }
+}
+
+///|
+/// Write a UTF-8 encoded string view into the buffer.
+///
+/// Parameters:
+///
+/// - `buf`: destination buffer.
+/// - `string`: string view to encode as UTF-8 bytes.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf8("Hi")
+///   inspect(buf.contents().length(), content="2")
+/// }
+/// ```
+pub fn Buffer::write_string_utf8(buf : Self, string : StringView) -> Unit {
+  for ch in string {
+    buf.write_char_utf8(ch)
+  }
+}
+
+///|
+/// Write a string view into the buffer as UTF-16 little-endian code units.
+///
+/// Parameters:
+///
+/// - `buf`: destination buffer.
+/// - `string`: string view to encode in UTF-16LE.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16le("A")
+///   inspect(buf.contents().length(), content="2")
+/// }
+/// ```
+#alias(write_stringview, deprecated="use write_string_utf16le instead")
+pub fn Buffer::write_string_utf16le(buf : Self, string : StringView) -> Unit {
+  let len = string.length()
+  buf.grow_if_necessary(buf.len + len * 2)
+  for code_unit in string.code_units(); j = buf.len {
+    let c = code_unit.to_int().reinterpret_as_uint()
+    buf.data[j] = (c & 0xff).to_byte()
+    buf.data[j + 1] = (c >> 8).to_byte()
+    continue j + 2
+  }
+  buf.len += len * 2
+}
+
+///|
+/// Write a string view into the buffer as UTF-16 big-endian code units.
+///
+/// Parameters:
+///
+/// - `buf`: destination buffer.
+/// - `string`: string view to encode in UTF-16BE.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16be("A")
+///   inspect(buf.contents().length(), content="2")
+/// }
+/// ```
+pub fn Buffer::write_string_utf16be(buf : Self, string : StringView) -> Unit {
+  let len = string.length()
+  buf.grow_if_necessary(buf.len + len * 2)
+  for code_unit in string.code_units(); j = buf.len {
+    let c = code_unit.to_int().reinterpret_as_uint()
+    buf.data[j + 1] = (c & 0xff).to_byte()
+    buf.data[j] = (c >> 8).to_byte()
+    continue j + 2
+  }
+  buf.len += len * 2
+}
+
+///|
+/// Parameters:
+///
+/// * `self` : The buffer to write to.
+/// * `str` : The source string from which the substring will be taken.
+/// * `offset` : The starting position in the source string (inclusive). Must be
+/// non-negative.
+/// * `count` : The number of characters to write. Must be non-negative and
+/// `offset + count` must not exceed the length of the source string.
+pub impl Logger for Buffer with fn write_view(self : Buffer, value : StringView) -> Unit {
+  self.grow_if_necessary(self.len + value.length() * 2)
+  self.data.blit_from_string(
+    self.len,
+    value.data(),
+    value.start_offset(),
+    value.length(),
+  )
+  self.len += value.length() * 2
+}
+
+///|
+/// Writes a UTF-16LE encoded character into the buffer. Automatically grows the
+/// buffer if necessary.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `char` : The character to be written.
+pub impl Logger for Buffer with fn write_char(self : Buffer, value : Char) -> Unit {
+  self.grow_if_necessary(self.len + 4)
+  let inc = self.data.set_utf16le_char(self.len, value)
+  self.len += inc
+}
+
+///|
+/// Writes a single byte to the end of the buffer. The buffer will automatically
+/// grow if necessary to accommodate the new byte.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer to write to.
+/// * `byte` : The byte value to be written.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_byte(b'\x41')
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"A"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_byte(self : Buffer, value : Byte) -> Unit {
+  self.grow_if_necessary(self.len + 1)
+  self.data[self.len] = value
+  self.len += 1
+}
+
+///|
+/// Writes bytes from an iterator to the buffer. 
+///
+/// Parameters:
+///
+/// * `self` : The buffer to write to.
+/// * `iter` : An iterator yielding bytes to write.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   let bytes = b"Hello"
+///   buf.write_iter(bytes.iter())
+///   inspect(
+///     buf.contents(),
+///     content=(
+///       #|b"Hello"
+///     ),
+///   )
+/// }
+/// ```
+pub fn Buffer::write_iter(self : Buffer, iter : Iter[Byte]) -> Unit {
+  for byte in iter {
+    self.write_byte(byte)
+  }
+}
+
+///|
+/// Resets the buffer to an empty state by setting the internal offset to 0.
+/// This makes the buffer appear empty without actually clearing the underlying data.
+///
+/// Parameters:
+///
+/// * `self` : The buffer to be reset.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16le("Hello")
+///   inspect(buf.length(), content="10")
+///   buf.reset()
+///   inspect(buf.length(), content="0")
+///   inspect(buf.is_empty(), content="true")
+/// }
+/// ```
+///
+pub fn Buffer::reset(self : Buffer) -> Unit {
+  self.len = 0
+}
+
+///|
+/// Returns a copy of the buffer's contents as a `Bytes` object. The returned
+/// bytes will have the same length as the buffer.
+///
+/// Parameters:
+///
+/// * `buffer` : The buffer whose contents will be converted to bytes.
+///
+/// Returns a `Bytes` object containing a copy of the buffer's contents.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_string_utf16le("Test")
+///   let bytes = buf.to_bytes()
+///   inspect(bytes.length(), content="8") //utf16
+/// }
+/// ```
+#alias(contents)
+pub fn Buffer::to_bytes(self : Buffer) -> Bytes {
+  Bytes::from_array(self.data[0:self.len])
+}
+
+///|
+/// Return a read-only byte view over the current buffer contents.
+///
+/// The view length equals `self.length()`. It shares underlying storage with
+/// the buffer, so later writes to the buffer may affect subsequent reads.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let buf = Buffer()
+///   buf.write_byte(b'A')
+///   let v = buf.view()
+///   inspect(v.length(), content="1")
+///   inspect(v[0], content="b'\\x41'")
+/// }
+/// ```
+pub fn Buffer::view(self : Buffer) -> ArrayView[Byte] {
+  self.data[0:self.len]
+}
+
+///|
+pub impl Show for Buffer with fn output(self, logger) {
+  logger.write_string(self.contents().to_unchecked_string())
+}

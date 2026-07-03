@@ -1,0 +1,18 @@
+{
+  "version": "2026-07-03",
+  "rules": [
+    {
+      "id": "rogue_001",
+      "name": "测试规则",
+      "severity": "rogue",
+      "signatures": [],
+      "path_patterns": [],
+      "run_names": [],
+      "file_names": [],
+      "hashes_sha256": [],
+      "service_names": [],
+      "homepage": "",
+      "description": "占位规则，开发阶段使用"
+    }
+  ]
+}

@@ -1,0 +1,128 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// Internal error surface used by argparse.
+///
+/// `Message` is display-ready text intended for end users.
+/// Parse failures include contextual help; command-definition validation
+/// failures are returned as plain validation messages.
+priv suberror ArgError {
+  Message(String)
+}
+
+///|
+impl Show for ArgError with fn output(self : ArgError, logger) {
+  match self {
+    Message(msg) => logger.write_string(msg)
+  }
+}
+
+///|
+impl @debug.Debug for ArgError with fn to_repr(self) {
+  match self {
+    Message(msg) => @debug.Repr::literal(msg)
+  }
+}
+
+///|
+test "ArgError debug keeps display text" {
+  let err : Error = ArgError::Message(
+    (
+      $|error: unexpected argument '--bad' found
+      $|
+      $|Usage: demo [options]
+    ),
+  )
+  inspect(
+    err.to_string(),
+    content=(
+      #|error: unexpected argument '--bad' found
+      #|
+      #|Usage: demo [options]
+    ),
+  )
+}
+
+///|
+/// Internal parse error variants used while parsing.
+priv suberror ArgParseError {
+  UnknownArgument(String, String?)
+  InvalidArgument(String)
+  MissingValue(String)
+  MissingRequired(String, String?)
+  TooFewValues(String, Int, Int)
+  TooManyValues(String, Int, Int)
+  TooManyPositionals(String, String?)
+  InvalidValue(String)
+  MissingGroup(String)
+  GroupConflict(String)
+}
+
+///|
+fn ArgParseError::arg_parse_error_message(self : ArgParseError) -> String {
+  match self {
+    UnknownArgument(arg, Some(hint)) =>
+      (
+        $|error: unexpected argument '\{arg}' found
+        $|
+        $|  tip: a similar argument exists: '\{hint}'
+      )
+    UnknownArgument(arg, None) => "error: unexpected argument '\{arg}' found"
+    InvalidArgument(arg) =>
+      if arg.has_prefix("-") {
+        "error: unexpected argument '\{arg}' found"
+      } else {
+        "error: \{arg}"
+      }
+    MissingValue(arg) =>
+      "error: a value is required for '\{arg}' but none was supplied"
+    MissingRequired(name, by) =>
+      if by is Some(source) {
+        "error: the following required argument was not provided: '\{name}' (required by '\{source}')"
+      } else {
+        "error: the following required argument was not provided: '\{name}'"
+      }
+    TooFewValues(name, got, min) =>
+      "error: '\{name}' requires at least \{min} values but only \{got} were provided"
+    TooManyValues(name, got, max) =>
+      "error: '\{name}' allows at most \{max} values but \{got} were provided"
+    TooManyPositionals(value, Some(arg)) =>
+      "error: unexpected value '\{value}' for '\{arg}' found; no more were expected"
+    TooManyPositionals(value, None) =>
+      "error: unexpected value '\{value}' found; no more were expected"
+    InvalidValue(msg) => "error: \{msg}"
+    MissingGroup(name) =>
+      "error: the following required argument group was not provided: '\{name}'"
+    GroupConflict(name) => "error: group conflict \{name}"
+  }
+}
+
+///|
+/// Internal build errors raised while validating command definitions.
+priv suberror ArgBuildError {
+  Unsupported(String)
+} derive(@debug.Debug)
+
+///|
+/// Internal control-flow event for displaying help.
+priv suberror DisplayHelp {
+  Message(String)
+}
+
+///|
+/// Internal control-flow event for displaying version text.
+priv suberror DisplayVersion {
+  Message(String)
+}

@@ -1,0 +1,35 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+pub impl[A : @debug.Debug + Compare] @debug.Debug for PriorityQueue[A] with fn to_repr(
+  self,
+) {
+  let xs : Array[@debug.Repr] = self.to_array().map(x => @debug.to_repr(x))
+  @debug.Repr::opaque_("PriorityQueue", @debug.Repr::array(xs))
+}
+
+///|
+#deprecated("use `to_repr(a)` instead", skip_current_package=true)
+pub fn[A : @debug.Debug + Compare] PriorityQueue::to_repr(
+  self : PriorityQueue[A],
+) -> @debug.Repr {
+  @debug.to_repr(self)
+}
+
+///|
+test "Debug for PriorityQueue" {
+  let pq : PriorityQueue[Int] = from_array([3, 1, 2])
+  @debug.debug_inspect(pq, content="<PriorityQueue: [3, 2, 1]>")
+}

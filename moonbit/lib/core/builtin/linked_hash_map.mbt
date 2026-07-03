@@ -1,0 +1,1209 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Types
+
+///|
+priv struct Entry[K, V] {
+  mut prev : Int
+  mut next : Entry[K, V]?
+  mut psl : Int
+  hash : Int
+  key : K
+  mut value : V
+}
+
+///|
+/// Mutable linked hash map that maintains the order of insertion, not thread safe.
+///
+/// # Example
+///
+/// ```mbt check
+/// test {
+///   let map = { 3: "three", 8: "eight", 1: "one" }
+///   @test.assert_eq(map.get(2), None)
+///   @test.assert_eq(map.get(3), Some("three"))
+///   map.set(3, "updated")
+///   @test.assert_eq(map.get(3), Some("updated"))
+/// }
+/// ```
+struct Map[K, V] {
+  mut entries : FixedArray[Entry[K, V]?]
+  mut size : Int // active key-value pairs count
+  mut capacity : Int // current capacity
+  mut capacity_mask : Int // capacity_mask = capacity - 1, used to find idx
+  mut grow_at : Int // threshold that triggers grow
+  mut head : Entry[K, V]? // head of linked list
+  mut tail : Int // tail of linked list
+}
+
+// Implementations
+
+///|
+let default_init_capacity = 8
+
+///|
+fn[K, V] new_map(capacity : Int) -> Map[K, V] {
+  let capacity = capacity.next_power_of_two()
+  {
+    size: 0,
+    capacity,
+    capacity_mask: capacity - 1,
+    grow_at: calc_grow_threshold(capacity),
+    entries: FixedArray::make(capacity, None),
+    head: None,
+    tail: -1,
+  }
+}
+
+///|
+fn capacity_for_length(length : Int) -> Int {
+  let mut capacity = length.next_power_of_two()
+  if length > calc_grow_threshold(capacity) {
+    capacity *= 2
+  }
+  capacity
+}
+
+///|
+/// Create a hash map from an array.
+/// The optional `capacity` is treated as a minimum initial capacity and will be
+/// rounded up to the smallest power of 2 that can hold the requested capacity.
+#alias(from_array)
+pub fn[K : Hash + Eq, V] Map::Map(
+  arr : ArrayView[(K, V)],
+  capacity? : Int,
+) -> Map[K, V] {
+  let length = arr.length()
+  let capacity = match capacity {
+    Some(capacity) => capacity.max(capacity_for_length(length))
+    None =>
+      if length == 0 {
+        default_init_capacity
+      } else {
+        capacity_for_length(length)
+      }
+  }
+  let m = new_map(capacity)
+  for e in arr {
+    m.set(e.0, e.1)
+  }
+  m
+}
+
+///|
+/// Sets a key-value pair into the hash map. If the key already exists, updates
+/// its value. If the hash map is near full capacity, automatically
+/// grows the internal storage to accommodate more entries.
+///
+/// Parameters:
+///
+/// * `map` : The hash map to modify.
+/// * `key` : The key to insert or update. Must implement `Hash` and `Eq` traits.
+/// * `value` : The value to associate with the key.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map : Map[String, Int] = Map([])
+///   map.set("key", 42)
+///   debug_inspect(map.get("key"), content="Some(42)")
+///   map.set("key", 24) // update existing key
+///   debug_inspect(map.get("key"), content="Some(24)")
+/// }
+/// ```
+#alias("_[_]=_")
+pub fn[K : Hash + Eq, V] Map::set(self : Map[K, V], key : K, value : V) -> Unit {
+  self.set_with_hash(key, value, key.hash())
+}
+
+///|
+fn[K : Eq, V] Map::set_with_hash(
+  self : Map[K, V],
+  key : K,
+  value : V,
+  hash : Int,
+) -> Unit {
+  // Only grow when actually inserting a new entry, not when updating existing
+  for psl = 0, idx = hash & self.capacity_mask {
+    match self.entries[idx] {
+      None => {
+        // Need to insert new entry - check if grow is needed first
+        if self.size >= self.grow_at {
+          self.grow()
+          // Restart search with new capacity_mask
+          continue 0, hash & self.capacity_mask
+        }
+        let entry = { prev: self.tail, next: None, psl, key, value, hash }
+        self.add_entry_to_tail(idx, entry)
+        return
+      }
+      Some(curr_entry) => {
+        if curr_entry.hash == hash && curr_entry.key == key {
+          // Key exists - just update value, no grow needed
+          curr_entry.value = value
+          return
+        }
+        if psl > curr_entry.psl {
+          // Need to insert and push away - check if grow is needed first
+          if self.size >= self.grow_at {
+            self.grow()
+            // Restart search with new capacity_mask
+            continue 0, hash & self.capacity_mask
+          }
+          self.push_away(idx, curr_entry)
+          let entry = { prev: self.tail, next: None, psl, key, value, hash }
+          self.add_entry_to_tail(idx, entry)
+          return
+        }
+        continue psl + 1, (idx + 1) & self.capacity_mask
+      }
+    }
+  }
+}
+
+///|
+fn[K, V] Map::push_away(
+  self : Map[K, V],
+  idx : Int,
+  entry : Entry[K, V],
+) -> Unit {
+  for psl = entry.psl + 1, idx = (idx + 1) & self.capacity_mask, entry = entry {
+    match self.entries[idx] {
+      None => {
+        entry.psl = psl
+        self.set_entry(entry, idx)
+        break
+      }
+      Some(curr_entry) =>
+        if psl > curr_entry.psl {
+          entry.psl = psl
+          self.set_entry(entry, idx)
+          continue curr_entry.psl + 1,
+            (idx + 1) & self.capacity_mask,
+            curr_entry
+        } else {
+          continue psl + 1, (idx + 1) & self.capacity_mask, entry
+        }
+    }
+  }
+}
+
+///|
+fn[K, V] Map::set_entry(
+  self : Map[K, V],
+  entry : Entry[K, V],
+  new_idx : Int,
+) -> Unit {
+  self.entries[new_idx] = Some(entry)
+  match entry.next {
+    None => self.tail = new_idx
+    Some(next) => next.prev = new_idx
+  }
+}
+
+///|
+/// Retrieves the value associated with a given key in the hash map.
+///
+/// Parameters:
+///
+/// * `self` : The hash map to search in.
+/// * `key` : The key to look up in the map.
+///
+/// Returns `Some(value)` if the key exists in the map, `None` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "key": 42 }
+///   debug_inspect(map.get("key"), content="Some(42)")
+///   debug_inspect(map.get("nonexistent"), content="None")
+/// }
+/// ```
+pub fn[K : Hash + Eq, V] Map::get(self : Map[K, V], key : K) -> V? {
+  let hash = key.hash()
+  for i = 0, idx = hash & self.capacity_mask {
+    guard self.entries[idx] is Some(entry) else { break None }
+    if entry.hash == hash && entry.key == key {
+      break Some(entry.value)
+    }
+    if i > entry.psl {
+      break None
+    }
+    continue i + 1, (idx + 1) & self.capacity_mask
+  }
+}
+
+///|
+/// Get value with `at` access semantics.
+#alias("_[_]")
+pub fn[K : Hash + Eq, V] Map::at(self : Map[K, V], key : K) -> V {
+  let hash = key.hash()
+  for i = 0, idx = hash & self.capacity_mask {
+    guard self.entries[idx] is Some(entry)
+    if entry.hash == hash && entry.key == key {
+      return entry.value
+    }
+    guard i <= entry.psl
+    continue i + 1, (idx + 1) & self.capacity_mask
+  }
+}
+
+///|
+/// Returns the value associated with the key in the map, or computes and returns
+/// a default value if the key does not exist.
+///
+/// Parameters:
+///
+/// * `map` : The map to search in.
+/// * `key` : The key to look up in the map.
+/// * `default` : A function that returns a default value when the key is not
+/// found.
+///
+/// Returns either the value associated with the key if it exists, or the result
+/// of calling the default function.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "a": 1, "b": 2 }
+///   inspect(map.get_or_default("a", 0), content="1")
+///   inspect(map.get_or_default("c", 42), content="42")
+/// }
+/// ```
+pub fn[K : Hash + Eq, V] Map::get_or_default(
+  self : Map[K, V],
+  key : K,
+  default : V,
+) -> V {
+  let hash = key.hash()
+  for i = 0, idx = hash & self.capacity_mask {
+    match self.entries[idx] {
+      Some(entry) => {
+        if entry.hash == hash && entry.key == key {
+          break entry.value
+        }
+        if i > entry.psl {
+          break default
+        }
+        continue i + 1, (idx + 1) & self.capacity_mask
+      }
+      None => break default
+    }
+  }
+}
+
+///|
+/// Returns the value for the given key, or sets and returns a default value if the key does not exist.
+pub fn[K : Hash + Eq, V] Map::get_or_init(
+  self : Map[K, V],
+  key : K,
+  default : () -> V,
+) -> V {
+  let hash = key.hash()
+  let (idx, psl, new_value, push_away) = for psl = 0, idx = hash &
+                                               self.capacity_mask {
+    match self.entries[idx] {
+      Some(entry) => {
+        if entry.hash == hash && entry.key == key {
+          return entry.value
+        }
+        if psl > entry.psl {
+          let new_value = default()
+          break (idx, psl, new_value, Some(entry))
+        }
+        continue psl + 1, (idx + 1) & self.capacity_mask
+      }
+      None => {
+        let new_value = default()
+        break (idx, psl, new_value, None)
+      }
+    }
+  }
+  if self.size >= self.grow_at {
+    // Slow path, we need to resize
+    self.grow()
+    self.set_with_hash(key, new_value, hash)
+  } else {
+    if push_away is Some(entry) {
+      self.push_away(idx, entry)
+    }
+    let entry = {
+      prev: self.tail,
+      next: None,
+      psl,
+      hash,
+      key,
+      value: new_value,
+    }
+    self.add_entry_to_tail(idx, entry)
+  }
+  new_value
+}
+
+///|
+/// Inserts `default` for `key` if it is absent, otherwise replaces the existing
+/// value with `f(existing)`. The pairing of an eager `default` value with a
+/// modifier function lets the canonical counter pattern read literally:
+///
+/// ```mbt check
+/// test {
+///   let counts : Map[String, Int] = Map([])
+///   counts.update_or_default("a", 1, x => x + 1)
+///   counts.update_or_default("a", 1, x => x + 1)
+///   counts.update_or_default("b", 1, x => x + 1)
+///   debug_inspect(counts.get("a"), content="Some(2)")
+///   debug_inspect(counts.get("b"), content="Some(1)")
+/// }
+/// ```
+///
+/// Note: `f` is *not* applied to `default` on first insertion — `default` is
+/// the value stored when the key is absent. This mirrors Java's `Map.merge`
+/// and Rust's `Entry::and_modify(f).or_insert(default)`.
+pub fn[K : Hash + Eq, V] Map::update_or_default(
+  self : Map[K, V],
+  key : K,
+  default : V,
+  f : (V) -> V,
+) -> Unit {
+  let hash = key.hash()
+  let (idx, psl, push_away) = for psl = 0, idx = hash & self.capacity_mask {
+    match self.entries[idx] {
+      Some(entry) => {
+        if entry.hash == hash && entry.key == key {
+          entry.value = f(entry.value)
+          return
+        }
+        if psl > entry.psl {
+          break (idx, psl, Some(entry))
+        }
+        continue psl + 1, (idx + 1) & self.capacity_mask
+      }
+      None => break (idx, psl, None)
+    }
+  }
+  if self.size >= self.grow_at {
+    self.grow()
+    self.set_with_hash(key, default, hash)
+  } else {
+    if push_away is Some(entry) {
+      self.push_away(idx, entry)
+    }
+    let entry = { prev: self.tail, next: None, psl, hash, key, value: default }
+    self.add_entry_to_tail(idx, entry)
+  }
+}
+
+///|
+/// Check if the hash map contains a key.
+pub fn[K : Hash + Eq, V] Map::contains(self : Map[K, V], key : K) -> Bool {
+  // inline Map::get to avoid boxing
+  let hash = key.hash()
+  for i = 0, idx = hash & self.capacity_mask {
+    guard self.entries[idx] is Some(entry) else { break false }
+    if entry.hash == hash && entry.key == key {
+      break true
+    }
+    if i > entry.psl {
+      break false
+    }
+    continue i + 1, (idx + 1) & self.capacity_mask
+  }
+}
+
+///|
+/// Checks if a map contains a specific key-value pair.
+///
+/// Parameters:
+///
+/// * `map` : A map of type `Map[K, V]` to search in.
+/// * `key` : The key to look up in the map.
+/// * `value` : The value to be compared with the value associated with the key.
+///
+/// Returns `true` if the map contains the specified key and its associated value
+/// equals the given value, `false` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "a": 1, "b": 2 }
+///   inspect(map.contains_kv("a", 1), content="true")
+///   inspect(map.contains_kv("a", 2), content="false")
+///   inspect(map.contains_kv("c", 3), content="false")
+/// }
+/// ```
+pub fn[K : Hash + Eq, V : Eq] Map::contains_kv(
+  self : Map[K, V],
+  key : K,
+  value : V,
+) -> Bool {
+  // inline Map::get to avoid boxing
+  let hash = key.hash()
+  for i = 0, idx = hash & self.capacity_mask {
+    guard self.entries[idx] is Some(entry) else { break false }
+    if entry.hash == hash && entry.key == key && entry.value == value {
+      break true
+    }
+    if i > entry.psl {
+      break false
+    }
+    continue i + 1, (idx + 1) & self.capacity_mask
+  }
+}
+
+///|
+/// Removes the entry for the specified key from the hash map. If the key exists
+/// in the map, removes its entry and adjusts the probe sequence length (PSL) of
+/// subsequent entries to maintain the Robin Hood hashing invariant. If the key
+/// does not exist, the map remains unchanged.
+///
+/// Parameters:
+///
+/// * `self` : The hash map to remove the entry from.
+/// * `key` : The key to remove from the map.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "a": 1, "b": 2 }
+///   map.remove("a")
+///   debug_inspect(map.get("a"), content="None")
+///   inspect(map.length(), content="1")
+/// }
+/// ```
+pub fn[K : Hash + Eq, V] Map::remove(self : Map[K, V], key : K) -> Unit {
+  self.remove_with_hash(key, key.hash())
+}
+
+///|
+fn[K : Eq, V] Map::remove_with_hash(
+  self : Map[K, V],
+  key : K,
+  hash : Int,
+) -> Unit {
+  for i = 0, idx = hash & self.capacity_mask {
+    guard self.entries[idx] is Some(entry) else { break }
+    if entry.hash == hash && entry.key == key {
+      self.remove_entry(entry)
+      self.shift_back(idx)
+      self.size -= 1
+      break
+    }
+    if i > entry.psl {
+      break
+    }
+    continue i + 1, (idx + 1) & self.capacity_mask
+  }
+}
+
+///|
+fn[K, V] Map::add_entry_to_tail(
+  self : Map[K, V],
+  idx : Int,
+  entry : Entry[K, V],
+) -> Unit {
+  match self.tail {
+    -1 => self.head = Some(entry)
+    tail => self.entries[tail].unwrap().next = Some(entry)
+  }
+  self.tail = idx
+  self.entries[idx] = Some(entry)
+  self.size += 1
+}
+
+///|
+fn[K, V] Map::remove_entry(self : Map[K, V], entry : Entry[K, V]) -> Unit {
+  match entry.prev {
+    -1 => self.head = entry.next
+    idx => self.entries[idx].unwrap().next = entry.next
+  }
+  match entry.next {
+    None => self.tail = entry.prev
+    Some(next) => next.prev = entry.prev
+  }
+}
+
+///|
+fn[K, V] Map::shift_back(self : Map[K, V], idx : Int) -> Unit {
+  for cur = idx {
+    let next = (cur + 1) & self.capacity_mask
+    match self.entries[next] {
+      None | Some({ psl: 0, .. }) => {
+        self.entries[cur] = None
+        break
+      }
+      Some(entry) => {
+        entry.psl -= 1
+        self.set_entry(entry, cur)
+        continue next
+      }
+    }
+  }
+}
+
+///|
+fn[K, V] Map::grow(self : Map[K, V]) -> Unit {
+  let old_head = self.head
+  let new_capacity = self.capacity << 1
+  self.entries = FixedArray::make(new_capacity, None)
+  self.capacity = new_capacity
+  self.capacity_mask = new_capacity - 1
+  self.grow_at = calc_grow_threshold(self.capacity)
+  self.size = 0
+  self.head = None
+  self.tail = -1
+  for x = old_head {
+    match x {
+      None => break
+      Some(e) => {
+        let next_in_chain = e.next
+        e.next = None
+        self.rehash_place_entry(e)
+        continue next_in_chain
+      }
+    }
+  }
+}
+
+///|
+fn[K, V] Map::rehash_place_entry(self : Map[K, V], outer : Entry[K, V]) -> Unit {
+  let hash = outer.hash
+  for psl = 0, idx = hash & self.capacity_mask {
+    match self.entries[idx] {
+      None => {
+        outer.psl = psl
+        outer.prev = self.tail
+        self.add_entry_to_tail(idx, outer)
+        return
+      }
+      Some(curr) =>
+        if psl > curr.psl {
+          self.push_away(idx, curr)
+          outer.psl = psl
+          outer.prev = self.tail
+          self.add_entry_to_tail(idx, outer)
+          return
+        } else {
+          continue psl + 1, (idx + 1) & self.capacity_mask
+        }
+    }
+  }
+}
+
+///|
+fn calc_grow_threshold(capacity : Int) -> Int {
+  capacity * 13 / 16
+}
+
+// Utils
+
+///|
+#deprecated("Use Debug instead of Show for debugging purposes. See https://github.com/moonbitlang/core/blob/main/debug/README.mbt.md")
+pub impl[K : Show, V : Show] Show for Map[K, V]
+
+///|
+pub impl[K : Show, V : Show] Show for Map[K, V] with fn output(self, logger) {
+  logger.write_string("{")
+  for x = 0, y = self.head {
+    match (x, y) {
+      (_, None) => break logger.write_string("}")
+      (i, Some({ key, value, next, .. })) => {
+        if i > 0 {
+          logger.write_string(", ")
+        }
+        logger.write_object(key)
+        logger.write_string(": ")
+        logger.write_object(value)
+        continue i + 1, next
+      }
+    }
+  }
+}
+
+///|
+/// Get the number of key-value pairs in the map.
+#alias(size, deprecated)
+pub fn[K, V] Map::length(self : Map[K, V]) -> Int {
+  self.size
+}
+
+///|
+/// Get the capacity of the map.
+pub fn[K, V] Map::capacity(self : Map[K, V]) -> Int {
+  self.capacity
+}
+
+///|
+/// Check if the hash map is empty.
+pub fn[K, V] Map::is_empty(self : Map[K, V]) -> Bool {
+  self.size == 0
+}
+
+///|
+/// Iterate over all key-value pairs of the map in the order of insertion.
+#locals(f)
+pub fn[K, V] Map::each(
+  self : Map[K, V],
+  f : (K, V) -> Unit raise?,
+) -> Unit raise? {
+  for x = self.head {
+    match x {
+      Some({ key, value, next, .. }) => {
+        f(key, value)
+        continue next
+      }
+      None => break
+    }
+  }
+}
+
+///|
+/// Iterate over all key-value pairs of the map in the order of insertion, with index.
+#locals(f)
+pub fn[K, V] Map::eachi(
+  self : Map[K, V],
+  f : (Int, K, V) -> Unit raise?,
+) -> Unit raise? {
+  for x = 0, y = self.head {
+    match (x, y) {
+      (i, Some({ key, value, next, .. })) => {
+        f(i, key, value)
+        continue i + 1, next
+      }
+      (_, None) => break
+    }
+  }
+}
+
+///|
+/// Clears the map, removing all key-value pairs. Keeps the allocated space.
+pub fn[K, V] Map::clear(self : Map[K, V]) -> Unit {
+  self.entries.fill(None)
+  self.size = 0
+  self.head = None
+  self.tail = -1
+}
+
+///|
+/// Returns the iterator of the hash map, provide elements in the order of insertion.
+#alias(iterator, deprecated)
+pub fn[K, V] Map::iter(self : Map[K, V]) -> Iter[(K, V)] {
+  let mut curr_entry = self.head
+  let len = self.size
+  let mut remaining = len
+  Iter::new(
+    fn() {
+      guard remaining > 0 && curr_entry is Some({ key, value, next, .. }) else {
+        None
+      }
+      curr_entry = next
+      remaining -= 1
+      Some((key, value))
+    },
+    size_hint=len,
+  )
+}
+
+///|
+/// Return an iterator via `iter2`.
+#alias(iterator2, deprecated)
+pub fn[K, V] Map::iter2(self : Map[K, V]) -> Iter2[K, V] {
+  self.iter()
+}
+
+///|
+/// Return an iterator of keys.
+pub fn[K, V] Map::keys(self : Map[K, V]) -> Iter[K] {
+  let mut curr_entry = self.head
+  let len = self.size
+  let mut remaining = len
+  Iter::new(
+    fn() {
+      guard remaining > 0 && curr_entry is Some({ key, next, .. }) else { None }
+      curr_entry = next
+      remaining -= 1
+      Some(key)
+    },
+    size_hint=len,
+  )
+}
+
+///|
+/// Return an iterator of values.
+pub fn[K, V] Map::values(self : Map[K, V]) -> Iter[V] {
+  let mut curr_entry = self.head
+  let len = self.size
+  let mut remaining = len
+  Iter::new(
+    fn() {
+      guard remaining > 0 && curr_entry is Some({ value, next, .. }) else {
+        None
+      }
+      curr_entry = next
+      remaining -= 1
+      Some(value)
+    },
+    size_hint=len,
+  )
+}
+
+///|
+/// Converts the hash map to an array.
+pub fn[K, V] Map::to_array(self : Map[K, V]) -> Array[(K, V)] {
+  let arr = Array::make_uninit(self.size)
+  let mut i = 0
+  for x = self.head {
+    match x {
+      Some({ key, value, next, .. }) => {
+        arr.unsafe_set(i, (key, value))
+        i += 1
+        continue next
+      }
+      None => break
+    }
+  }
+  arr
+}
+
+///|
+pub impl[K : Hash + Eq, V : Eq] Eq for Map[K, V] with fn equal(
+  self : Map[K, V],
+  that : Map[K, V],
+) -> Bool {
+  guard self.size == that.size else { return false }
+  for k, v in self {
+    guard that.contains_kv(k, v) else { return false }
+  } nobreak {
+    true
+  }
+}
+
+///|
+/// Function `of`.
+#deprecated("Use `Map([(k, v), ...])` or `Map::from_array` instead")
+pub fn[K : Hash + Eq, V] Map::of(arr : FixedArray[(K, V)]) -> Map[K, V] {
+  let length = arr.length()
+  let m = new_map(capacity_for_length(length))
+  // arr.iter((e) => { m.set(e.0, e.1) })
+  for e in arr {
+    m.set(e.0, e.1)
+  }
+  m
+}
+
+///|
+/// Create from `iter`.
+#alias(from_iterator, deprecated)
+pub fn[K : Hash + Eq, V] Map::from_iter(iter : Iter[(K, V)]) -> Map[K, V] {
+  let m = {}
+  while iter.next() is Some((k, v)) {
+    m.set(k, v)
+  }
+  m
+}
+
+///|
+pub impl[K, V] Default for Map[K, V] with fn default() {
+  new_map(default_init_capacity)
+}
+
+///|
+/// Applies a function to each key-value pair in the map and returns a new map with the results, using the original keys.
+pub fn[K, V, V2] Map::map(self : Map[K, V], f : (K, V) -> V2) -> Map[K, V2] {
+  // copy structure
+  let other = {
+    capacity: self.capacity,
+    entries: FixedArray::make(self.capacity, None),
+    size: self.size,
+    capacity_mask: self.capacity_mask,
+    grow_at: self.grow_at,
+    head: None,
+    tail: self.tail,
+  }
+  if self.size == 0 {
+    return other
+  }
+  guard self.entries[self.tail] is Some(last)
+  for entry = last, idx = self.tail, next = (None : Entry[K, V2]?) {
+    let { prev, psl, hash, key, value, .. } = entry
+    let new_value = f(key, value)
+    let new_entry = { prev, next, psl, hash, key, value: new_value }
+    other.entries[idx] = Some(new_entry)
+    if prev != -1 {
+      continue self.entries[prev].unwrap(), prev, Some(new_entry)
+    } else {
+      other.head = Some(new_entry)
+      break
+    }
+  }
+  other
+}
+
+///|
+/// Copy the map, creating a new map with the same key-value pairs and order of insertion.
+#alias(clone, deprecated)
+pub fn[K, V] Map::copy(self : Map[K, V]) -> Map[K, V] {
+  // copy structure
+  let other = {
+    capacity: self.capacity,
+    entries: FixedArray::make(self.capacity, None),
+    size: self.size,
+    capacity_mask: self.capacity_mask,
+    grow_at: self.grow_at,
+    head: None,
+    tail: self.tail,
+  }
+  if self.size == 0 {
+    return other
+  }
+  guard self.entries[self.tail] is Some(last)
+  for entry = last, idx = self.tail, next = (None : Entry[K, V]?) {
+    let { prev, psl, hash, key, value, .. } = entry
+    let new_entry = { prev, next, psl, hash, key, value }
+    other.entries[idx] = Some(new_entry)
+    if prev != -1 {
+      continue self.entries[prev].unwrap(), prev, Some(new_entry)
+    } else {
+      other.head = Some(new_entry)
+      break
+    }
+  }
+  other
+}
+
+///|
+/// Merges two maps into a new map. Returns a new map containing all key-value
+/// pairs from both maps. When both maps contain the same key, the value from
+/// `other` takes precedence. The iteration order follows the order of `self`
+/// followed by new entries from `other`.
+///
+/// This is a pure operation - it does not modify either of the input maps.
+///
+/// Parameters:
+///
+/// * `self` : The first map.
+/// * `other` : The second map whose values take precedence in case of key
+/// conflicts.
+///
+/// Returns a new linked hash map containing all entries from both maps.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map1 : Map[String, Int] = { "a": 1, "b": 2 }
+///   let map2 : Map[String, Int] = { "b": 3, "c": 4 }
+///   let merged = map1.merge(map2)
+///   @json.json_inspect(merged, content={ "a": 1, "b": 3, "c": 4 })
+/// }
+/// ```
+pub fn[K : Eq, V] Map::merge(self : Map[K, V], other : Map[K, V]) -> Map[K, V] {
+  let result = self.copy()
+  result.merge_in_place(other)
+  result
+}
+
+///|
+/// Merges another map into this map in-place. Updates the current map by adding
+/// all key-value pairs from `other`. When both maps contain the same key, the
+/// value from `other` overwrites the value in this map. New entries from `other`
+/// are added at the end, preserving the original order of `self` and appending
+/// new keys from `other`.
+///
+/// This is a mutating operation - it modifies the receiver map.
+///
+/// Parameters:
+///
+/// * `self` : The map to be modified.
+/// * `other` : The map whose entries will be added to `self`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map1 : Map[String, Int] = { "a": 1, "b": 2 }
+///   let map2 : Map[String, Int] = { "b": 3, "c": 4 }
+///   map1.merge_in_place(map2)
+///   @json.json_inspect(map1, content={ "a": 1, "b": 3, "c": 4 })
+/// }
+/// ```
+pub fn[K : Eq, V] Map::merge_in_place(
+  self : Map[K, V],
+  other : Map[K, V],
+) -> Unit {
+  if physical_equal(self, other) {
+    return
+  }
+  for x = other.head {
+    match x {
+      Some({ key, value, next, hash, .. }) => {
+        self.set_with_hash(key, value, hash)
+        continue next
+      }
+      None => break
+    }
+  }
+}
+
+///|
+/// Retains only the key-value pairs that satisfy the given predicate function.
+/// This method modifies the map in-place, removing all entries for which
+/// the predicate returns `false`. The order of remaining elements is preserved.
+///
+/// Parameters:
+///
+/// * `self` : The map to be filtered.
+/// * `predicate` : A function that takes a key and value as arguments and returns
+/// `true` if the key-value pair should be kept, `false` if it should be removed.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "a": 1, "b": 2, "c": 3, "d": 4 }
+///   map.retain((_k, v) => v % 2 == 0) // Keep only even values
+///   inspect(map.length(), content="2")
+///   debug_inspect(map.get("a"), content="None")
+///   debug_inspect(map.get("b"), content="Some(2)")
+///   debug_inspect(map.get("c"), content="None")
+///   debug_inspect(map.get("d"), content="Some(4)")
+/// }
+/// ```
+#locals(f)
+pub fn[K, V] Map::retain(self : Map[K, V], f : (K, V) -> Bool) -> Unit {
+  for x = self.head, y = false {
+    match (x, y) {
+      (Some({ key, value, next, prev: idx, .. }), remove_prev) => {
+        if remove_prev {
+          guard self.entries[idx] is Some(entry)
+          self.remove_entry(entry)
+          self.shift_back(idx)
+          self.size -= 1
+        }
+        continue next, !f(key, value)
+      }
+      (None, remove_prev) => {
+        if remove_prev {
+          let idx = self.tail
+          guard self.entries[idx] is Some(entry)
+          self.remove_entry(entry)
+          self.shift_back(idx)
+          self.size -= 1
+        }
+        break
+      }
+    }
+  }
+}
+
+///|
+/// Updates a value in the map based on the existing value.
+///
+/// This method allows you to conditionally update, insert, or remove a key-value pair
+/// based on whether the key already exists in the map. The provided function `f` is
+/// called with `Some(current_value)` if the key exists, or `None` if it doesn't.
+///
+/// Parameters:
+///
+/// * `self` : The map to update.
+/// * `key` : The key to update.
+/// * `f` : A function that takes the current value (wrapped in `Option`) and returns
+///   the new value (wrapped in `Option`). Returning `None` will remove the key-value
+///   pair from the map.
+///
+/// Behavior:
+///
+/// * If the key exists and `f` returns `Some(new_value)`, the value is updated.
+/// * If the key exists and `f` returns `None`, the key-value pair is removed.
+/// * If the key doesn't exist and `f` returns `Some(new_value)`, a new pair is inserted.
+/// * If the key doesn't exist and `f` returns `None`, no operation is performed.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "a": 1, "b": 2 }
+///
+///   // Update existing value
+///   map.update("a", fn(v) {
+///     match v {
+///       Some(x) => Some(x + 10)
+///       None => Some(0)
+///     }
+///   })
+///   debug_inspect(
+///     map,
+///     content=(
+///       #|{ "a": 11, "b": 2 }
+///     ),
+///   )
+///
+///   // Insert new value
+///   map.update("c", fn(v) {
+///     match v {
+///       Some(x) => Some(x)
+///       None => Some(3)
+///     }
+///   })
+///   debug_inspect(
+///     map,
+///     content=(
+///       #|{ "a": 11, "b": 2, "c": 3 }
+///     ),
+///   )
+///
+///   // Remove existing value
+///   map.update("b", fn(_) { None })
+///   debug_inspect(
+///     map,
+///     content=(
+///       #|{ "a": 11, "c": 3 }
+///     ),
+///   )
+/// }
+/// ```
+pub fn[K : Hash + Eq, V] Map::update(
+  self : Map[K, V],
+  key : K,
+  f : (V?) -> V?,
+) -> Unit {
+  let hash = key.hash()
+  let (idx, psl, new_value, push_away) = for psl = 0, idx = hash &
+                                               self.capacity_mask {
+    match self.entries[idx] {
+      Some(entry) => {
+        if entry.hash == hash && entry.key == key {
+          // Found the entry, update its value
+          if f(Some(entry.value)) is Some(new_value) {
+            entry.value = new_value
+          } else {
+            // Remove the entry since the new value is None
+            self.remove_entry(entry)
+            self.shift_back(idx)
+            self.size -= 1
+          }
+          return
+        }
+        if psl > entry.psl {
+          guard f(None) is Some(new_value) else { return }
+          break (idx, psl, new_value, Some(entry))
+        }
+        continue psl + 1, (idx + 1) & self.capacity_mask
+      }
+      None => {
+        guard f(None) is Some(new_value) else { return }
+        break (idx, psl, new_value, None)
+      }
+    }
+  }
+  if self.size >= self.grow_at {
+    // Slow path, we need to resize
+    self.grow()
+    self.set(key, new_value)
+  } else {
+    if push_away is Some(entry) {
+      self.push_away(idx, entry)
+    }
+    let entry = {
+      prev: self.tail,
+      next: None,
+      psl,
+      hash,
+      key,
+      value: new_value,
+    }
+    self.add_entry_to_tail(idx, entry)
+  }
+}
+
+// Special handling for Views as accessors
+
+///|
+/// Retrieves the value associated with a `BytesView` key in a map with `Bytes` keys.
+///
+/// This function allows efficient lookups using `BytesView` without creating a new `Bytes` object.
+/// It's particularly useful when working with byte slices or subranges of existing byte arrays.
+///
+/// Parameters:
+///
+/// * `map` : The hash map with `Bytes` keys to search in.
+/// * `key` : A `BytesView` representing the key to look up.
+///
+/// Returns `Some(value)` if a matching key exists in the map, `None` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { b"hello": 1, b"world": 2 }
+///   let bytes = b"prefix_hello_suffix"
+///   let view = bytes[7:12] // view of "hello"
+///   debug_inspect(map.get_from_bytes(view), content="Some(1)")
+/// }
+/// ```
+pub fn[V] Map::get_from_bytes(map : Self[Bytes, V], key : BytesView) -> V? {
+  let hash = key.hash()
+  for i = 0, idx = hash & map.capacity_mask {
+    guard map.entries[idx] is Some(entry) else { break None }
+    if entry.hash == hash && key.equal_to_bytes(entry.key) {
+      break Some(entry.value)
+    }
+    if i > entry.psl {
+      break None
+    }
+    continue i + 1, (idx + 1) & map.capacity_mask
+  }
+}
+
+///|
+/// Retrieves the value associated with a `StringView` key in a map with `String` keys.
+///
+/// This function allows efficient lookups using `StringView` without creating a new `String` object.
+/// It's particularly useful when working with substrings or string slices.
+///
+/// Parameters:
+///
+/// * `map` : The hash map with `String` keys to search in.
+/// * `key` : A `StringView` representing the key to look up.
+///
+/// Returns `Some(value)` if a matching key exists in the map, `None` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let map = { "hello": 1, "world": 2 }
+///   let str = "say hello to everyone"
+///   let view = str.view(start_offset=4, end_offset=9) // view of "hello"
+///   debug_inspect(map.get_from_string(view), content="Some(1)")
+/// }
+/// ```
+pub fn[V] Map::get_from_string(map : Self[String, V], key : StringView) -> V? {
+  let hash = key.hash()
+  for i = 0, idx = hash & map.capacity_mask {
+    guard map.entries[idx] is Some(entry) else { break None }
+    if entry.hash == hash && key.equal_to_string(entry.key) {
+      break Some(entry.value)
+    }
+    if i > entry.psl {
+      break None
+    }
+    continue i + 1, (idx + 1) & map.capacity_mask
+  }
+}

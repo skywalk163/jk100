@@ -1,0 +1,7 @@
+import {
+  "jk100/jk100/lib/core",
+}
+
+options(
+  "is-main": true,
+)

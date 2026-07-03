@@ -1,0 +1,2041 @@
+// Copyright 2026 International Digital Economy Academy
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+///|
+/// A big integer represented as an array of Int.
+//
+// Design explained:
+// - Why use an FixedArray of Int with a len field instead of an Array[Int]?
+//   - It follows the principle of least dependency in MoonBit's core.
+//   - In our case, we always do one-off array allocation for each BigInt.
+// - Why keep a separate len field instead of using limbs.length()?
+//   - Since we always do only once array allocation for each BigInt, we
+//     often need to estimate the number of limbs needed before allocating.
+//     Using len allows us to accommodate leading zeros.
+//
+// Invariants:
+// - len > 0
+// - forall 0 <= i < len. 0 <= limbs[i] < radix
+// - (exists 0 <= i < len. limbs[i] > 0) => limbs[len-1] > 0
+// - (forall 0 <= i < len. limbs[i] == 0) => limbs[0] == 0 and len == 1
+// - forall len <= i < limbs.length(). limbs[i] == 0
+#valtype
+struct BigInt {
+  limbs : FixedArray[UInt] // Note: do not use limbs.length(), use len instead because of leading zeros
+  sign : Sign
+  len : Int
+}
+
+///|
+priv enum Sign {
+  Positive
+  Negative
+} derive(Eq, @debug.Debug)
+
+///|
+test "internal repr" {
+  fn convert(b : BigInt) -> @debug.Repr {
+    @debug.Repr::record({
+      "limbs": @debug.to_repr(b.limbs),
+      "sign": @debug.to_repr(b.sign),
+      "len": @debug.to_repr(b.len),
+    })
+  }
+  @debug.debug_inspect(
+    [0N, 1, 2, 3, 4, -1, -2, -3, -4].map(convert),
+    content=(
+      #|[
+      #|  { limbs: <FixedArray: [0, 0]>, sign: Positive, len: 1 },
+      #|  { limbs: <FixedArray: [1, 0]>, sign: Positive, len: 1 },
+      #|  { limbs: <FixedArray: [2, 0]>, sign: Positive, len: 1 },
+      #|  { limbs: <FixedArray: [3, 0]>, sign: Positive, len: 1 },
+      #|  { limbs: <FixedArray: [4, 0]>, sign: Positive, len: 1 },
+      #|  { limbs: <FixedArray: [1, 0]>, sign: Negative, len: 1 },
+      #|  { limbs: <FixedArray: [2, 0]>, sign: Negative, len: 1 },
+      #|  { limbs: <FixedArray: [3, 0]>, sign: Negative, len: 1 },
+      #|  { limbs: <FixedArray: [4, 0]>, sign: Negative, len: 1 },
+      #|]
+    ),
+  )
+}
+
+// Hyper Params
+
+///|
+/// Invariants:
+/// - ((RADIX - 1)^2 + (RADIX - 1)) must fit in a UInt64
+/// - RADIX can only be a power of 2
+/// - RADIX_BIT_LEN is multiple of 4
+/// - RADIX_BIT_LEN <= 32
+const RADIX_BIT_LEN = 32
+
+///|
+/// The base of the number system.
+const RADIX : UInt64 = 1UL << RADIX_BIT_LEN // TODO: This can be generalized once we have const generics
+
+///|
+/// The mask to extract the lower `RADIX_BIT_LEN` bits.
+const RADIX_MASK : UInt64 = RADIX - 1
+
+///|
+/// The ratio of the number of decimal digits to the number of radix digits.
+const DECIMAL_RATIO : Double = 0.302 // log10(2)
+
+///|
+/// When to switch to Karatsuba multiplication
+const KARATSUBA_THRESHOLD = 50
+
+// Useful bigints
+
+///|
+let zero : BigInt = 0N
+
+///|
+let one : BigInt = 1N
+
+// Conversion Functions
+
+///|
+/// Converts a 32-bit signed integer to a BigInt.
+///
+/// Parameters:
+///
+/// * `value` : The 32-bit signed integer (`Int`) to be converted.
+///
+/// Returns a `BigInt` equivalent to the input integer.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let big = @bigint.BigInt::from_int(42)
+///   inspect(big, content="42")
+///   let neg = @bigint.BigInt::from_int(-42)
+///   inspect(neg, content="-42")
+/// }
+/// ```
+pub fn BigInt::from_int(n : Int) -> BigInt {
+  BigInt::from_int64(n.to_int64())
+}
+
+///|
+/// Converts an unsigned 32-bit integer to a `BigInt`.
+///
+/// Parameters:
+///
+/// * `value` : The unsigned 32-bit integer to be converted.
+///
+/// Returns a `BigInt` representing the same numerical value as the input.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = 42U
+///   inspect(@bigint.BigInt::from_uint(n), content="42")
+/// }
+/// ```
+pub fn BigInt::from_uint(n : UInt) -> BigInt {
+  BigInt::from_uint64(n.to_uint64())
+}
+
+///|
+/// Converts a signed 64-bit integer to a `BigInt`.
+///
+/// Parameters:
+///
+/// * `number` : A 64-bit signed integer (`Int64`) to be converted.
+///
+/// Returns a `BigInt` value that represents the same numerical value as the
+/// input.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let big = @bigint.BigInt::from_int64(9223372036854775807L) // max value of Int64
+///   inspect(big, content="9223372036854775807")
+///   let neg = @bigint.BigInt::from_int64(-9223372036854775808L) // min value of Int64
+///   inspect(neg, content="-9223372036854775808")
+/// }
+/// ```
+pub fn BigInt::from_int64(n : Int64) -> BigInt {
+  if n < 0L {
+    -BigInt::from_uint64((-n).reinterpret_as_uint64())
+  } else {
+    BigInt::from_uint64(n.reinterpret_as_uint64())
+  }
+}
+
+///|
+/// Converts an unsigned 64-bit integer to a `BigInt`.
+///
+/// Parameters:
+///
+/// * `value` : The unsigned 64-bit integer (`UInt64`) to be converted.
+///
+/// Returns a new `BigInt` with the same value as the input. The resulting
+/// `BigInt` will always have a positive sign since the input is an unsigned
+/// integer.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = @bigint.BigInt::from_uint64(12345678901234567890UL)
+///   inspect(n, content="12345678901234567890")
+///   let zero = @bigint.BigInt::from_uint64(0UL)
+///   inspect(zero, content="0")
+/// }
+/// ```
+pub fn BigInt::from_uint64(n : UInt64) -> BigInt {
+  if n == 0UL {
+    return { limbs: FixedArray::make(1, 0), sign: Positive, len: 1 }
+  }
+  let limbs = FixedArray::make(64 / RADIX_BIT_LEN, 0U)
+  let i = for m = n, i = 0; m > 0; {
+    limbs[i] = (m & RADIX_MASK).to_uint()
+    continue m >> RADIX_BIT_LEN, i + 1
+  } nobreak {
+    i
+  }
+  { limbs, sign: Positive, len: i }
+}
+
+// Arithmetic Operations
+
+///|
+/// Negates a big integer, returning a new big integer with the opposite sign. If
+/// the input is zero, returns zero.
+///
+/// Parameters:
+///
+/// * `self` : The big integer to negate.
+///
+/// Returns a new big integer with the opposite sign of the input, or zero if the
+/// input is zero.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   inspect(-42N, content="-42")
+///   inspect(-(-42N), content="42")
+///   inspect(-0N, content="0")
+/// }
+/// ```
+pub impl Neg for BigInt with fn neg(self : BigInt) -> BigInt {
+  if self.is_zero() {
+    return zero
+  }
+  { ..self, sign: if self.sign == Positive { Negative } else { Positive } }
+}
+
+///|
+/// Adds two arbitrary-precision integers. Handles positive and negative numbers
+/// correctly by converting subtraction of negative numbers into addition of
+/// positive numbers.
+///
+/// Parameters:
+///
+/// * `self` : The first big integer to add.
+/// * `other` : The second big integer to add.
+///
+/// Returns a new `BigInt` that represents the sum of the two input numbers.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = 9223372036854775807N // Max value of Int64
+///   let b = 1N
+///   inspect(a + b, content="9223372036854775808") // Beyond Int64 range
+///   inspect(-a + -b, content="-9223372036854775808")
+/// }
+/// ```
+pub impl Add for BigInt with fn add(self : BigInt, other : BigInt) -> BigInt {
+  if self.sign == Negative {
+    if other.sign == Negative {
+      return -(-other + -self)
+    } else {
+      return other - -self
+    }
+  } else if other.sign == Negative {
+    return self - -other
+  }
+  let self_len = self.len
+  let other_len = other.len
+  let limbs = FixedArray::make(1 + max(self_len, other_len), 0U)
+  let i = for carry = 0UL, i = 0; i < self_len || i < other_len || carry != 0; {
+    let a = if i < self_len { self.limbs[i].to_uint64() } else { 0 }
+    let b = if i < other_len { other.limbs[i].to_uint64() } else { 0 }
+    let sum = a + b + carry
+    limbs[i] = (sum & RADIX_MASK).to_uint()
+    continue sum >> RADIX_BIT_LEN, i + 1
+  } nobreak {
+    i
+  }
+  { limbs, sign: Positive, len: i }
+}
+
+///|
+/// Subtracts one arbitrary-precision integer from another. Handles positive and
+/// negative numbers appropriately.
+///
+/// Parameters:
+///
+/// * `self` : The minuend (the number to subtract from).
+/// * `other` : The subtrahend (the number to be subtracted).
+///
+/// Returns a new `BigInt` representing the difference between `self` and
+/// `other`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = 12345678901234567890N
+///   let b = 9876543210987654321N
+///   inspect(a - b, content="2469135690246913569")
+///   inspect(-a - b, content="-22222222112222222211")
+/// }
+/// ```
+pub impl Sub for BigInt with fn sub(self : BigInt, other : BigInt) -> BigInt {
+  // first make sure self and other > 0
+  if self.sign == Negative {
+    if other.sign == Negative {
+      return -other - -self
+    } else {
+      return -(other + -self)
+    }
+  } else if other.sign == Negative {
+    return self + -other
+  }
+  // then make sure self >= other
+  if self < other {
+    return -(other - self)
+  }
+  let self_len = self.len
+  let other_len = other.len
+  let limbs = FixedArray::make(max(self_len, other_len), 0U)
+  let i = for borrow = 0L, i = 0; i < self_len || i < other_len || borrow != 0L; {
+    let a = if i < self_len { self.limbs[i].to_int64() } else { 0 }
+    let b = if i < other_len { other.limbs[i].to_int64() } else { 0 }
+    let diff = a - b - borrow // 0 <= a < radix, 0 <= b < radix, 0 <= borrow <= 1 => -radix <= diff < radix
+    if diff < 0L {
+      limbs[i] = (diff + RADIX.reinterpret_as_int64())
+        .reinterpret_as_uint64()
+        .to_uint() // -radix <= diff < 0, so we don't need to mod by radix
+      continue 1L, i + 1
+    } else {
+      limbs[i] = diff.reinterpret_as_uint64().to_uint() // 0 <= diff < radix, so we don't need to mod by radix
+      continue 0L, i + 1
+    }
+  } nobreak {
+    i
+  }
+  // Ensure the result has at least one limb with a value of zero if the result is zero
+  let i = for i = i; i > 1 && limbs[i - 1] == 0; {
+    continue i - 1
+  } nobreak {
+    i
+  }
+  { limbs, sign: Positive, len: i }
+}
+
+///|
+/// Multiplies two arbitrary-precision integers. Uses the most efficient
+/// multiplication algorithm based on the size of the operands:
+///
+/// * Grade school multiplication for small numbers
+/// * Karatsuba multiplication for large numbers
+///
+/// Parameters:
+///
+/// * `self` : The first arbitrary-precision integer to multiply.
+/// * `other` : The second arbitrary-precision integer to multiply.
+///
+/// Returns the product of the two numbers. The sign of the result follows the
+/// standard multiplication rules: positive if both operands have the same sign,
+/// negative otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = 12345678901234567890N
+///   let b = -98765432109876543210N
+///   inspect(a * b, content="-1219326311370217952237463801111263526900")
+///   inspect(a * 0N, content="0")
+/// }
+/// ```
+pub impl Mul for BigInt with fn mul(self : BigInt, other : BigInt) -> BigInt {
+  if self.is_zero() || other.is_zero() {
+    return zero
+  }
+  // Specialize the (n-limb) x (1-limb) case. Factorial-style chains hit
+  // this on every multiplication, and the general grade-school loop has
+  // a per-i branch on `j < other_len` plus carry propagation overhead
+  // that disappears here.
+  let ret = if other.len == 1 {
+    self.mul_single_limb(other.limbs.unsafe_get(0))
+  } else if self.len == 1 {
+    other.mul_single_limb(self.limbs.unsafe_get(0))
+  } else if self.len < KARATSUBA_THRESHOLD || other.len < KARATSUBA_THRESHOLD {
+    self.grade_school_mul(other)
+  } else {
+    self.karatsuba_mul(other)
+  }
+  { ..ret, sign: if self.sign == other.sign { Positive } else { Negative } }
+}
+
+///|
+/// Multiply the magnitude of `self` by a single radix-limb `x`. Returns
+/// a `Positive`-signed result regardless of `self.sign` — the caller in
+/// `Mul::mul` overwrites `sign` with the correct combined sign. This
+/// matches the convention of the other magnitude-only multiply helpers
+/// (`grade_school_mul`, `karatsuba_mul`). Do not call directly when a
+/// signed product is needed.
+///
+/// Requires `self` to be non-zero and `x > 0`: with a zero operand the
+/// result would be an all-zero magnitude with `len > 1`, breaking the
+/// no-leading-zeros invariant. The call site in `Mul::mul` guarantees
+/// this via its `is_zero` guard.
+fn BigInt::mul_single_limb(self : BigInt, x : UInt) -> BigInt {
+  let n = self.len
+  let limbs = FixedArray::make(n + 1, 0U)
+  let x_u64 = x.to_uint64()
+  let mut carry = 0UL
+  for i in 0..<n {
+    let product = self.limbs[i].to_uint64() * x_u64 + carry
+    limbs[i] = (product & RADIX_MASK).to_uint()
+    carry = product >> RADIX_BIT_LEN
+  }
+  let len = if carry == 0UL {
+    n
+  } else {
+    limbs[n] = carry.to_uint()
+    n + 1
+  }
+  { limbs, sign: Positive, len }
+}
+
+// Simplest way to multiply two BigInts.
+
+///|
+fn BigInt::grade_school_mul(self : BigInt, other : BigInt) -> BigInt {
+  let self_len = self.len
+  let other_len = other.len
+  let mut len = self_len + other_len
+  let limbs = FixedArray::make(len, 0U)
+  for i in 0..<self_len {
+    let mut carry = 0UL
+    // Safety of unsafe_get/unsafe_set: row i's partial sum fits in
+    // limbs[0..=i+other_len], so the carry flush ends with i + j <=
+    // i + other_len < limbs.length(); the self/other reads are guarded
+    // by self_len/other_len. The checked version relies on the same
+    // invariant to not panic.
+    for j = 0; j < other_len || carry != 0; j = j + 1 {
+      let product = limbs.unsafe_get(i + j).to_uint64() +
+        self.limbs.unsafe_get(i).to_uint64() *
+        (if j < other_len { other.limbs.unsafe_get(j).to_uint64() } else { 0 }) +
+        carry
+      limbs.unsafe_set(i + j, (product & RADIX_MASK).to_uint())
+      carry = product >> RADIX_BIT_LEN
+    }
+  }
+  if limbs[self_len + other_len - 1] == 0 {
+    len -= 1
+  }
+  { limbs, sign: Positive, len }
+}
+
+// Karatsuba multiplication
+
+///|
+fn BigInt::karatsuba_mul(self : BigInt, other : BigInt) -> BigInt {
+  let half = (max(self.len, other.len) + 1) / 2
+  let (xl, xh) = self.split(half)
+  let (yl, yh) = other.split(half)
+  let p1 = xh * yh
+  let p2 = xl * yl
+  let p3 = (xh + xl) * (yh + yl)
+  (p1 << (RADIX_BIT_LEN * 2 * half)) +
+  ((p3 - p1 - p2) << (RADIX_BIT_LEN * half)) +
+  p2
+}
+
+// Get the lower half of the number.
+
+///|
+fn BigInt::split(self : BigInt, half : Int) -> (BigInt, BigInt) {
+  if self.len <= half {
+    return ({ ..self, sign: Positive }, zero)
+  }
+  let lower_len = for i in half>..1 {
+    if self.limbs[i] > 0 {
+      break i + 1
+    }
+  } nobreak {
+    1
+  }
+  let lower = FixedArray::make(lower_len, 0U)
+  lower.unsafe_blit(0, self.limbs, 0, lower_len)
+  let upper = FixedArray::make(self.len - half, 0U)
+  upper.unsafe_blit(0, self.limbs, half, self.len - half)
+  (
+    { limbs: lower, sign: Positive, len: lower_len },
+    { limbs: upper, sign: Positive, len: self.len - half },
+  )
+}
+
+///|
+/// Performs division between two arbitrary-precision integers, following
+/// standard arithmetic rules for signed division.
+///
+/// Parameters:
+///
+/// * `self` : The dividend big integer.
+/// * `other` : The divisor big integer.
+///
+/// Returns the quotient of the division.
+///
+/// Throws a panic if the divisor is zero.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = @bigint.BigInt::from_string("100")
+///   let b = @bigint.BigInt::from_string("20")
+///   inspect(a / b, content="5")
+///   inspect(-a / b, content="-5")
+///   inspect(a / -b, content="-5")
+///   inspect(-a / -b, content="5")
+/// }
+/// ```
+pub impl Div for BigInt with fn div(self : BigInt, other : BigInt) -> BigInt {
+  if other is 0 {
+    abort("division by zero")
+  }
+
+  // Handle negative numbers
+  if self.sign == Negative {
+    if other.sign == Negative {
+      BigInt::grade_school_div(-self, -other).0
+    } else {
+      -BigInt::grade_school_div(-self, other).0
+    }
+  } else if other.sign == Negative {
+    -BigInt::grade_school_div(self, -other).0
+  } else {
+    return BigInt::grade_school_div(self, other).0
+  }
+}
+
+///|
+/// Calculates the modulo (remainder) of dividing one big integer by another.
+///
+/// Parameters:
+///
+/// * `self` : The dividend big integer.
+/// * `other` : The divisor big integer.
+///
+/// Returns the remainder of the division operation.
+///
+/// Throws an error if `other` is zero.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = 42N
+///   let b = 5N
+///   inspect(a % b, content="2")
+///   let c = -42N
+///   let d = -5N
+///   inspect(c % d, content="-2")
+/// }
+/// ```
+pub impl Mod for BigInt with fn mod(self : BigInt, other : BigInt) -> BigInt {
+  if other == zero {
+    abort("division by zero")
+  }
+  // Handle negative numbers
+  if self.sign == Negative {
+    if other.sign == Negative {
+      -BigInt::grade_school_div(-self, -other).1
+    } else {
+      -BigInt::grade_school_div(-self, other).1
+    }
+  } else if other.sign == Negative {
+    BigInt::grade_school_div(self, -other).1
+  } else {
+    BigInt::grade_school_div(self, other).1
+  }
+}
+
+// Simplest way to divide two BigInts.
+// Assumption: other != zero.
+
+///|
+fn BigInt::grade_school_div(self : BigInt, other : BigInt) -> (BigInt, BigInt) {
+  // Handle edge cases
+  if self < other {
+    return (zero, self)
+  } else if self == other {
+    return (one, zero)
+  }
+  if other.len == 1 {
+    let number = other.limbs[0]
+    let ret = self.copy()
+    if number == 1 {
+      return (ret, zero)
+    }
+    let a = ret.limbs
+    let x = number.to_uint64()
+    let y = for i in self.len>..0; y = 0UL {
+      let y = y << RADIX_BIT_LEN
+      let y = y + a[i].to_uint64()
+      a[i] = ((y / x) & RADIX_MASK).to_uint()
+      continue y % x
+    } nobreak {
+      y
+    }
+    if ret.limbs[ret.len - 1] == 0 {
+      return (
+        { ..ret, len: ret.len - 1 },
+        { limbs: FixedArray::make(1, y.to_uint()), sign: Positive, len: 1 },
+      )
+    }
+    return (
+      ret,
+      { limbs: FixedArray::make(1, y.to_uint()), sign: Positive, len: 1 },
+    )
+  }
+
+  // Cite: TAOCP Vol. 2, 4.3.1
+  let dividend = self
+  let divisor = other
+
+  // D1. normalize
+  // m = dividend.len - divisor.len
+  // left shift dividend & divisor such that
+  // - b[b.length() - 1] >= radix / 2
+  // - a.length() == self.len + 1
+  // where a and b represent the limbs of the adjusted dividend and divisor
+  let lshift = max(
+    0,
+    RADIX_BIT_LEN - (64 - divisor.limbs[divisor.len - 1].to_int64().clz()),
+  )
+  let a_len = dividend.len
+  let dividend = dividend << lshift
+  let divisor = divisor << lshift
+  let b_len = divisor.len
+  let b = FixedArray::make(b_len, 0UL)
+  for i in 0..<b_len {
+    b[i] = divisor.limbs[i].to_uint64()
+  }
+  let a = FixedArray::make(a_len + 1, 0UL)
+  for i in 0..<a_len {
+    a[i] = dividend.limbs[i].to_uint64()
+  }
+  if dividend.limbs.length() > a_len {
+    a[a_len] = dividend.limbs[a_len].to_uint64()
+  }
+
+  // invariant : divisor.limbs.last() >= radix / 2
+  // if b[b_len - 1] < radix / 2 {
+  //   panic()
+  // }
+  let a_len = a_len + 1
+  // a is the adjusted dividend and b is the adjusted divisor
+  let v1 = b[b_len - 1]
+  let v2 = b[b_len - 2]
+  let q = FixedArray::make(a_len - b_len, 0U)
+  // D2 - D7 loop through m to 0
+  for i in q.length()>..0 {
+    let u0 = a[i + b_len]
+    let u1 = a[i + b_len - 1]
+    let u2 = a[i + b_len - 2]
+    // D3 compute qh
+    let mut qh = (u0 * RADIX + u1) / v1
+    if qh * v2 > RADIX * (u0 * RADIX + u1 - qh * v1) + u2 {
+      qh -= 1
+    }
+    // D4 divident = divident - qh * divisor
+    let mut borrow = 0L
+    let mut carry = 0UL
+    for j in 0..<b_len {
+      carry += qh * b[j]
+      borrow += a[i + j].reinterpret_as_int64()
+      borrow -= (carry & RADIX_MASK).reinterpret_as_int64()
+      a[i + j] = (borrow & RADIX_MASK.reinterpret_as_int64()).reinterpret_as_uint64()
+      borrow = borrow >> RADIX_BIT_LEN
+      carry = carry >> RADIX_BIT_LEN
+    }
+    borrow = borrow + a[i + b_len].reinterpret_as_int64()
+    borrow -= carry.reinterpret_as_int64()
+    a[i + b_len] = (borrow & RADIX_MASK.reinterpret_as_int64()).reinterpret_as_uint64()
+    borrow = borrow >> RADIX_BIT_LEN
+    if borrow < 0L {
+      carry = 0UL
+      for j in 0..<b_len {
+        carry += a[i + j]
+        carry += b[j]
+        a[i + j] = carry & RADIX_MASK
+        carry = carry >> RADIX_BIT_LEN
+      }
+      carry += a[i + b_len]
+      a[i + b_len] = carry & RADIX_MASK
+      carry = carry >> RADIX_BIT_LEN
+      borrow += carry.reinterpret_as_int64()
+      qh -= 1
+    }
+    q[i] = qh.to_uint()
+  }
+  let len = if q[q.length() - 1] == 0 { q.length() - 1 } else { q.length() }
+
+  // strip leading zeros
+  let mut i = a.length() - 1
+  while i >= 0 && a[i] == 0 {
+    i -= 1
+  }
+  if i < 0 {
+    i = 1
+  } else {
+    i += 1
+  }
+  let modulo = FixedArray::make(i, 0U)
+  for j in 0..<i {
+    modulo[j] = a[j].to_uint()
+  }
+  let modulo = { limbs: modulo, sign: Positive, len: i }
+  ({ limbs: q, sign: Positive, len }, modulo >> lshift)
+}
+
+// Bitwise Operations
+
+///|
+/// Performs a left shift operation on a `BigInt` value. Preserves the sign of
+/// the original number while shifting only its absolute value.
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to be shifted.
+/// * `n` : The number of positions to shift left. Must be non-negative.
+///
+/// Returns a new `BigInt` value that is the result of shifting the absolute
+/// value of the input left by `n` positions, maintaining the original sign.
+///
+/// Throws a panic if the shift count is negative.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let x = 5N
+///   inspect(x << 2, content="20")
+///   let y = -5N
+///   inspect(y << 2, content="-20")
+/// }
+/// ```
+pub impl Shl for BigInt with fn shl(self : BigInt, n : Int) -> BigInt {
+  if n < 0 {
+    abort("negative shift count")
+  }
+  if !self.is_zero() {
+    let new_limbs = FixedArray::make(
+      self.len + (n + RADIX_BIT_LEN - 1) / RADIX_BIT_LEN, // ceiling(n / RADIX_BIT_LEN)
+      0U,
+    )
+    let a = self.limbs
+    let r = n % RADIX_BIT_LEN
+    let lz = n / RADIX_BIT_LEN // number of leading zeros
+    let mut len = self.len + lz
+    if r != 0 {
+      let carry = for i in 0..<self.len; carry = 0UL {
+        let carry = carry | (a[i].to_uint64() << r)
+        new_limbs[i + lz] = (carry & RADIX_MASK).to_uint()
+        continue carry >> RADIX_BIT_LEN
+      } nobreak {
+        carry
+      }
+      if carry != 0 {
+        new_limbs[self.len + lz] = carry.to_uint()
+        len += 1
+      }
+    } else {
+      new_limbs.unsafe_blit(lz, self.limbs, 0, self.len)
+    }
+    { limbs: new_limbs, sign: self.sign, len }
+  } else {
+    zero
+  }
+}
+
+///|
+/// Performs arithmetic right shift operation on a big integer value. The shift
+/// operation preserves the sign of the number while shifting the absolute value
+/// right by `n` bits. For negative numbers, the result is rounded towards
+/// negative infinity.
+///
+/// Parameters:
+///
+/// * `self` : The big integer value to be shifted.
+/// * `n` : The number of bits to shift right. Must be non-negative.
+///
+/// Returns a new `BigInt` value that represents the result of shifting `self`
+/// right by `n` bits.
+///
+/// Throws a panic if `n` is negative.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = @bigint.BigInt::from_string("1024")
+///   inspect(n >> 3, content="128")
+///   let neg = @bigint.BigInt::from_string("-1024")
+///   inspect(neg >> 3, content="-128")
+/// }
+/// ```
+pub impl Shr for BigInt with fn shr(self : BigInt, n : Int) -> BigInt {
+  if n < 0 {
+    abort("negative shift count")
+  }
+  let r = n % RADIX_BIT_LEN
+  let lz = n / RADIX_BIT_LEN
+  if lz >= self.len {
+    match self.sign {
+      Positive => return zero
+      Negative =>
+        return { limbs: FixedArray::make(1, 1), sign: Negative, len: 1 }
+    }
+  }
+  let mut new_len = self.len - lz
+  if r == 0 {
+    let new_limbs = FixedArray::make(new_len, 0U)
+    new_limbs.unsafe_blit(0, self.limbs, lz, new_len)
+    let result = { limbs: new_limbs, sign: self.sign, len: new_len }
+    if self.sign == Negative {
+      for i in 0..<lz {
+        if self.limbs[i] != 0 {
+          return result - 1
+        }
+      }
+    }
+    result
+  } else {
+    let new_limbs = FixedArray::make(new_len, 0U)
+    let a = self.limbs
+    let carry = for i in self.len>..lz; carry = 0UL {
+      let x = a[i].to_uint64()
+      new_limbs[i - lz] = ((x >> r) | carry).to_uint()
+      continue (x << (RADIX_BIT_LEN - r)) & RADIX_MASK
+    } nobreak {
+      carry
+    }
+    if new_len > 1 && new_limbs[new_len - 1] == 0 {
+      new_len -= 1
+    }
+    if self.sign == Negative {
+      let mut has_remainder = carry != 0UL
+      if !has_remainder {
+        for i in 0..<lz {
+          if self.limbs[i] != 0 {
+            has_remainder = true
+            break
+          }
+        }
+      }
+      if has_remainder {
+        return { limbs: new_limbs, sign: self.sign, len: new_len } - 1
+      }
+    }
+    { limbs: new_limbs, sign: self.sign, len: new_len }
+  }
+}
+
+// Comparison Operations
+
+///|
+/// Checks whether a `BigInt` value is equal to zero.
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to be checked.
+///
+/// Returns `true` if the `BigInt` is zero, `false` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   inspect(0N.is_zero(), content="true")
+///   inspect(42N.is_zero(), content="false")
+///   inspect((-1N).is_zero(), content="false")
+/// }
+/// ```
+pub fn BigInt::is_zero(self : BigInt) -> Bool {
+  self.len == 1 && self.limbs[0] == 0
+}
+
+///|
+/// Compares two arbitrary-precision integers and returns their relative order.
+///
+/// Parameters:
+///
+/// * `self` : The first arbitrary-precision integer to compare.
+/// * `other` : The second arbitrary-precision integer to compare.
+///
+/// Returns an integer indicating the relative order:
+///
+/// * A negative value if `self` is less than `other`
+/// * Zero if `self` equals `other`
+/// * A positive value if `self` is greater than `other`
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = @bigint.BigInt::from_string("42")
+///   let b = @bigint.BigInt::from_string("24")
+///   let c = @bigint.BigInt::from_string("-42")
+///   inspect(a.compare(b), content="1") // 42 > 24
+///   inspect(b.compare(a), content="-1") // 24 < 42
+///   inspect(c.compare(a), content="-1") // -42 < 42
+///   inspect(a.compare(a), content="0") // 42 = 42
+/// }
+/// ```
+pub impl Compare for BigInt with fn compare(self, other) {
+  if self.sign != other.sign {
+    return if self.sign == Positive { 1 } else { -1 }
+  }
+  let self_len = self.len
+  let other_len = other.len
+  if self_len != other_len {
+    return if self.sign == Positive {
+      self_len - other_len
+    } else {
+      other_len - self_len
+    }
+  }
+  for i in self_len>..0 {
+    if self.limbs[i] != other.limbs[i] {
+      return if self.sign == Positive {
+        self.limbs[i].compare(other.limbs[i])
+      } else {
+        other.limbs[i].compare(self.limbs[i])
+      }
+    }
+  }
+  0
+}
+
+///|
+/// Compares two `BigInt` values for equality. Returns true if both numbers have
+/// the same sign and magnitude.
+///
+/// Parameters:
+///
+/// * `self` : The first `BigInt` value to compare.
+/// * `other` : The second `BigInt` value to compare.
+///
+/// Returns `true` if the two `BigInt` values are equal, `false` otherwise.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = 123456789N
+///   let b = 123456789N
+///   let c = -123456789N
+///   inspect(a == b, content="true")
+///   inspect(a == c, content="false")
+/// }
+/// ```
+pub impl Eq for BigInt with fn equal(self, other) {
+  if self.sign != other.sign || self.len != other.len {
+    return false
+  }
+  for i in 0..<self.len {
+    if self.limbs[i] != other.limbs[i] {
+      return false
+    }
+  }
+  true
+}
+
+///|
+/// Converts a `BigInt` value to a string representation in the specified radix.
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to convert to a string.
+/// * `radix` : The base to use for formatting (2 to 36). Defaults to 10.
+///
+/// Returns a string containing the representation of the number in the given
+/// radix, with a leading minus sign for negative numbers. Digits above 9 use
+/// lowercase letters (`a` to `z`).
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = 12345678901234567890N
+///   inspect(n.to_string(), content="12345678901234567890")
+///   inspect(n.to_string(radix=16), content="ab54a98ceb1f0ad2")
+///   let neg = -42N
+///   inspect(neg.to_string(), content="-42")
+///   let zero = 0N
+///   inspect(zero.to_string(), content="0")
+/// }
+/// ```
+pub fn BigInt::to_string(self : BigInt, radix? : Int = 10) -> String {
+  if radix < 2 || radix > 36 {
+    abort("radix must be between 2 and 36")
+  }
+  if radix != 10 {
+    return self.to_string_radix(radix)
+  }
+  // This function first converts the BigInt to a decimal representation, with a radix of 2^(`decimal_radix_bit_len`).
+  // Then it converts the decimal representation to a string slot by slot.
+  if self.is_zero() {
+    return "0"
+  }
+  let decimal_radix_bit_len = 19 - 1 - (1 + RADIX_BIT_LEN) / 3 // < len(9,223,372,036,854,775,807) - len(2^RADIX_BIT_LEN). len means the number of digits in decimal.
+  let decimal_mask = 10_000_000L // 10^(decimal_radix_bit_len). TODO: compute it when we have power function.
+  // The following value should fit well into an Int without precision loss.
+  // This is an approximation of the number of slots needed to represent the decimal value.
+  let decimal_len = unchecked_double_to_int(
+    (self.len * RADIX_BIT_LEN).to_double() *
+    DECIMAL_RATIO /
+    decimal_radix_bit_len.to_double() +
+    1,
+  )
+  let s = if self.sign == Negative { "-" } else { "" }
+  let v = Array::make(decimal_len, 0L)
+  let mut v_idx = 0
+  for i in self.len>..0 {
+    let mut x = self.limbs[i].to_int64()
+    for j in 0..<v_idx {
+      let y = (v[j] << RADIX_BIT_LEN) | x
+      x = y / decimal_mask
+      v[j] = y % decimal_mask
+    }
+    while x > 0L {
+      v[v_idx] = x % decimal_mask
+      v_idx += 1
+      x /= decimal_mask
+    }
+  }
+  let mut ret = ""
+  for i in 0..<(v_idx - 1) {
+    for _ in 0..<decimal_radix_bit_len {
+      let x = v[i] % 10L
+      v[i] /= 10L
+      ret = x.to_string() + ret
+    }
+  }
+  let ret = for x = v[v_idx - 1], ret = ret; x > 0L; { // v_idx is at least 1, we check is_zero() at the beginning.
+    let y = x % 10L
+    continue x / 10L, y.to_string() + ret
+  } nobreak {
+    ret
+  }
+  s + ret
+}
+
+///|
+fn digit_from_char(x : Int) -> Int {
+  match x {
+    '0'..='9' => x - '0'
+    'A'..='Z' => x + (10 - 'A')
+    'a'..='z' => x + (10 - 'a')
+    _ => -1
+  }
+}
+
+///|
+fn char_from_digit(d : Int) -> Char {
+  if d < 10 {
+    (d + '0'.to_int()).unsafe_to_char()
+  } else {
+    (d - 10 + 'a'.to_int()).unsafe_to_char()
+  }
+}
+
+///|
+fn pow2_shift(radix : Int) -> Int? {
+  if radix >= 2 && (radix & (radix - 1)) == 0 {
+    Some(radix.ctz())
+  } else {
+    None
+  }
+}
+
+///|
+fn BigInt::to_string_radix(self : BigInt, radix : Int) -> String {
+  if self.is_zero() {
+    return "0"
+  }
+  match pow2_shift(radix) {
+    Some(shift) => self.to_string_radix_pow2(shift)
+    None => {
+      let is_negative = self.sign == Negative
+      let base = BigInt::from_int(radix)
+      let value = if is_negative { -self } else { self }
+      let digits = []
+      for v = value {
+        if v > zero {
+          let (q, r) = BigInt::grade_school_div(v, base)
+          digits.push(char_from_digit(r.to_int()))
+          continue q
+        } else {
+          break
+        }
+      }
+      let builder = StringBuilder(
+        size_hint=digits.length() + (if is_negative { 1 } else { 0 }),
+      )
+      if is_negative {
+        builder.write_char('-')
+      }
+      for i in digits.length()>..0 {
+        builder.write_char(digits[i])
+      }
+      builder.to_string()
+    }
+  }
+}
+
+///|
+fn BigInt::to_string_radix_pow2(self : BigInt, shift : Int) -> String {
+  let is_negative = self.sign == Negative
+  let value = if is_negative { -self } else { self }
+  let bit_len = value.bit_length()
+  let digit_len = (bit_len + shift - 1) / shift
+  let builder = StringBuilder(
+    size_hint=digit_len + (if is_negative { 1 } else { 0 }),
+  )
+  if is_negative {
+    builder.write_char('-')
+  }
+  let mask = (1UL << shift) - 1UL
+  for pos in digit_len>..0 {
+    let bit_index = pos * shift
+    let limb_index = bit_index / RADIX_BIT_LEN
+    let offset = bit_index % RADIX_BIT_LEN
+    let mut chunk = value.limbs[limb_index].to_uint64() >> offset
+    if offset + shift > RADIX_BIT_LEN && limb_index + 1 < value.len {
+      chunk = chunk |
+        (value.limbs[limb_index + 1].to_uint64() << (RADIX_BIT_LEN - offset))
+    }
+    let digit = (chunk & mask).to_int()
+    builder.write_char(char_from_digit(digit))
+  }
+  builder.to_string()
+}
+
+///|
+fn BigInt::from_string_radix(input : String, radix : Int) -> BigInt {
+  match pow2_shift(radix) {
+    Some(shift) => BigInt::from_string_radix_pow2(input, radix, shift)
+    None => {
+      let len = input.length()
+      if len == 0 {
+        abort("empty string")
+      }
+      let sign : Sign = if input.unsafe_get(0) == '-' {
+        Negative
+      } else {
+        Positive
+      }
+      let start = if sign == Negative { 1 } else { 0 }
+      if start == len {
+        abort("invalid character")
+      }
+      let base = BigInt::from_int(radix)
+      let acc = for i in start..<len; acc = zero {
+        let digit = digit_from_char(input.unsafe_get(i).to_int())
+        if digit < 0 || digit >= radix {
+          abort("invalid character")
+        }
+        continue acc * base + BigInt::from_int(digit)
+      } nobreak {
+        acc
+      }
+      if sign == Negative {
+        -acc
+      } else {
+        acc
+      }
+    }
+  }
+}
+
+///|
+fn BigInt::from_string_radix_pow2(
+  input : String,
+  radix : Int,
+  shift : Int,
+) -> BigInt {
+  let len = input.length()
+  if len == 0 {
+    abort("empty string")
+  }
+  let sign : Sign = if input.unsafe_get(0) == '-' { Negative } else { Positive }
+  let start = if sign == Negative { 1 } else { 0 }
+  if start == len {
+    abort("invalid character")
+  }
+  // Skip leading zeros; `first` is the index of the first significant
+  // digit. Carried as a functional loop variable rather than a mutable
+  // local, yielded via `break first`.
+  let first = for first = start {
+    if first >= len {
+      break first
+    }
+    let digit = digit_from_char(input.unsafe_get(first).to_int())
+    if digit < 0 || digit >= radix {
+      abort("invalid character")
+    }
+    if digit != 0 {
+      break first
+    }
+    continue first + 1
+  }
+  if first == len {
+    return zero
+  }
+  let digits_count = len - first
+  let total_bits = digits_count * shift
+  let b_len = (total_bits + RADIX_BIT_LEN - 1) / RADIX_BIT_LEN
+  let limbs = FixedArray::make(b_len, 0U)
+  for i in len>..first; bit_pos = 0 {
+    let digit = digit_from_char(input.unsafe_get(i).to_int())
+    if digit < 0 || digit >= radix {
+      abort("invalid character")
+    }
+    let limb_index = bit_pos / RADIX_BIT_LEN
+    let offset = bit_pos % RADIX_BIT_LEN
+    let val = digit.reinterpret_as_uint().to_uint64()
+    limbs[limb_index] = (limbs[limb_index].to_uint64() | (val << offset)).to_uint()
+    if offset + shift > RADIX_BIT_LEN {
+      let hi = val >> (RADIX_BIT_LEN - offset)
+      limbs[limb_index + 1] = (limbs[limb_index + 1].to_uint64() | hi).to_uint()
+    }
+    continue bit_pos + shift
+  }
+  let b_len = normalize_len(limbs, b_len)
+  let sign = if b_len == 1 && limbs[0] == 0 { Positive } else { sign }
+  { limbs, sign, len: b_len }
+}
+
+///|
+/// Converts a string representation in the specified radix to a BigInt value.
+/// The string can optionally start with a minus sign (-) to indicate a negative
+/// number, followed by one or more digits valid for the radix.
+///
+/// Parameters:
+///
+/// * `input` : The string to be converted. Must be a valid number string in the
+/// given radix.
+/// * `radix` : The base to use for parsing (2 to 36). Defaults to 10.
+///
+/// Returns a `BigInt` value representing the number in the input string.
+///
+/// Throws a panic if:
+///
+/// * The input string is empty
+/// * The input string contains digits not valid for the given radix
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let pos = @bigint.BigInt::from_string("12345")
+///   let neg = @bigint.BigInt::from_string("-12345")
+///   let hex = @bigint.BigInt::from_string("ff", radix=16)
+///   inspect(pos, content="12345")
+///   inspect(neg, content="-12345")
+///   inspect(hex, content="255")
+/// }
+/// ```
+pub fn BigInt::from_string(input : String, radix? : Int = 10) -> BigInt {
+  if radix < 2 || radix > 36 {
+    abort("radix must be between 2 and 36")
+  }
+  if radix != 10 {
+    return BigInt::from_string_radix(input, radix)
+  }
+  BigInt::from_string_dec(input)
+}
+
+///|
+fn BigInt::from_string_dec(input : String) -> BigInt {
+  let len = input.length()
+  if len == 0 {
+    abort("empty string")
+  }
+  let sign : Sign = if input.unsafe_get(0) == '-' { Negative } else { Positive }
+  if sign == Negative && len == 1 {
+    abort("invalid character")
+  }
+  let mut b_len = (
+      unchecked_double_to_int(len.to_double() / DECIMAL_RATIO) +
+      1 +
+      RADIX_BIT_LEN
+    ) /
+    RADIX_BIT_LEN +
+    1
+  let b = FixedArray::make(b_len, 0U)
+  for
+    i in (match sign {
+      Negative => 1
+      Positive => 0
+    })..<input.length() {
+    let x = input.unsafe_get(i).to_int() - '0'.to_int()
+    if x < 0 || x > 9 {
+      abort("invalid character")
+    }
+    let mut carry = x.reinterpret_as_uint().to_uint64()
+    for j in 0..<b_len {
+      carry += b[j].to_uint64() * 10
+      b[j] = (carry & RADIX_MASK).to_uint()
+      carry = carry >> RADIX_BIT_LEN
+    }
+  }
+  while b[b_len - 1] == 0 && b_len > 1 {
+    b_len -= 1
+  }
+  let sign = if b_len == 1 && b[0] == 0 { Positive } else { sign }
+  { limbs: b, sign, len: b_len }
+}
+
+///|
+fn BigInt::copy(self : BigInt) -> BigInt {
+  let new_limbs = FixedArray::make(self.len, 0U)
+  new_limbs.unsafe_blit(0, self.limbs, 0, self.len)
+  { limbs: new_limbs, sign: self.sign, len: self.len }
+}
+
+///|
+/// Normalizes the len field by finding the highest non-zero limb.
+/// Ensures that the BigInt invariant is maintained: if all limbs are 0, len must be 1.
+fn normalize_len(limbs : FixedArray[UInt], max_len : Int) -> Int {
+  let mut actual_len = max_len
+  while actual_len > 1 && limbs[actual_len - 1] == 0U {
+    actual_len -= 1
+  }
+  actual_len
+}
+
+///|
+fn[T : Compare] max(a : T, b : T) -> T {
+  if a > b {
+    a
+  } else {
+    b
+  }
+}
+
+///|
+/// Computes the result of raising a `BigInt` to the power of another `BigInt`,
+/// with an optional modulus.
+///
+/// When a modulus is provided, computes the modular exponentiation using the
+/// square-and-multiply algorithm. This is particularly useful in cryptographic
+/// applications where direct exponentiation would result in numbers too large to
+/// handle efficiently.
+///
+/// Parameters:
+///
+/// * `self` : The base number to be raised to a power.
+/// * `exp` : The exponent (must be non-negative).
+/// * `modulus` : Optional modulus for modular exponentiation (must be positive
+/// if provided).
+///
+/// Returns the result of the exponentiation, or the result modulo `modulus` if a
+/// modulus is provided.
+///
+/// Throws:
+///
+/// * Aborts if the exponent is negative.
+/// * Aborts if the provided modulus is zero or negative.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let base = @bigint.BigInt::from_string("3")
+///   let exp = @bigint.BigInt::from_string("4")
+///   inspect(base.pow(exp), content="81")
+///   inspect(base.pow(exp, modulus=@bigint.BigInt::from_string("10")), content="1")
+/// }
+/// ```
+pub fn BigInt::pow(self : BigInt, exp : BigInt, modulus? : BigInt) -> BigInt {
+  if exp.sign == Negative {
+    abort("negative exponent")
+  }
+  match modulus {
+    None => {
+      let mut result = 1N
+      let mut base = self
+      let mut exp = exp
+      while exp > 0 {
+        if exp % 2 == 1 {
+          result = result * base
+        }
+        base = base * base
+        exp = exp / 2
+      }
+      result
+    }
+    Some(modulus) => {
+      guard !(modulus.is_zero() || modulus.sign == Negative)
+      let mut result = 1N % modulus
+      let mut base = (self % modulus + modulus) % modulus
+      let mut exp = exp
+      while exp > 0 {
+        if exp % 2 == 1 {
+          result = result * base % modulus
+        }
+        base = base * base % modulus
+        exp = exp / 2
+      }
+      result
+    }
+  }
+}
+
+///|
+/// Converts a big-endian byte sequence to a `BigInt` value with an optional
+/// sign. Interprets the input bytes as a big-endian representation of an
+/// unsigned integer, and applies the specified sign to create the final `BigInt`
+/// value.
+///
+/// Parameters:
+///
+/// * `bytes` : A sequence of bytes representing the magnitude of the number in
+/// big-endian order. The sequence must not be empty unless `sign` is 0.
+/// * `sign` : An integer specifying the sign of the resulting number (default:
+/// 1). A value of 1 creates a positive number, -1 creates a negative number, and
+/// 0 returns zero regardless of the input bytes.
+///
+/// Returns a `BigInt` value representing the number encoded in the byte sequence
+/// with the specified sign.
+///
+/// Throws a panic if the input byte sequence is empty and the sign is not 0.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let bytes = b"\x01\x02\x03" // Represents 0x010203
+///   let positive = @bigint.BigInt::from_octets(bytes)
+///   let negative = @bigint.BigInt::from_octets(bytes, signum=-1)
+///   inspect(positive, content="66051")
+///   inspect(negative, content="-66051")
+/// }
+/// ```
+pub fn BigInt::from_octets(input : BytesView, signum? : Int = 1) -> BigInt {
+  let len = input.length() // number of bytes
+  if signum == 0 {
+    return zero
+  } else if signum < 0 {
+    return -BigInt::from_octets(input)
+  }
+  if len == 0 {
+    abort("empty octet string")
+  }
+  let div = len * 8 / RADIX_BIT_LEN
+  let mod = len * 8 % RADIX_BIT_LEN // number of bits in the first limb
+  let limbs_len = if mod == 0 { div } else { div + 1 }
+  let limbs = FixedArray::make(limbs_len, 0U)
+  // head at most significant limb
+  for i in 0..<(mod / 8) {
+    limbs[limbs_len - 1] = (limbs[limbs_len - 1] << 8) | input[i].to_uint()
+  }
+  let byte_per_limb = RADIX_BIT_LEN / 8
+  // tail
+  for i in 0..<div {
+    for j in 0..<byte_per_limb {
+      let bytes_idx = len - byte_per_limb - i * byte_per_limb + j
+      limbs[i] = (limbs[i] << 8) | input[bytes_idx].to_uint()
+    }
+  }
+  if limbs[limbs_len - 1] == 0 {
+    { limbs, sign: Positive, len: max(1, limbs_len - 1) }
+  } else {
+    { limbs, sign: Positive, len: limbs_len }
+  }
+}
+
+///|
+/// Converts a non-negative arbitrary-precision integer to a big-endian byte
+/// sequence. The output can be padded with leading zeros to meet a specified
+/// length requirement, but only if the actual length is less than the requested
+/// length.
+///
+/// Parameters:
+///
+/// * `self` : The arbitrary-precision integer to convert. Must be non-negative.
+/// * `length` : Optional minimum length of the output byte sequence. If
+/// provided, must be positive. Defaults to 1 if not specified.
+///
+/// Returns a byte sequence representing the number in big-endian order, possibly
+/// padded with leading zeros to reach the specified length.
+///
+/// Throws a panic if:
+///
+/// * The input number is negative
+/// * The specified length is negative or zero
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = @bigint.BigInt::from_string("abcdef", radix=16)
+///   inspect(n.to_octets(length=4), content="b\"\\x00\\xab\\xcd\\xef\"")
+///   let m = @bigint.BigInt::from_string("0")
+///   inspect(m.to_octets(), content="b\"\\x00\"")
+/// }
+/// ```
+pub fn BigInt::to_octets(self : BigInt, length? : Int) -> Bytes {
+  let length = match length {
+    None => 1
+    Some(l) => if l <= 0 { abort("negative length") } else { l }
+  }
+  if self.is_zero() {
+    return Bytes::new(max(1, length))
+  }
+  if self.sign == Negative {
+    abort("negative BigInt")
+  }
+  let head_bits = 32 - self.limbs[self.len - 1].reinterpret_as_int().clz()
+  let tail_len = self.len - 1
+  let len = (head_bits + 7) / 8 + tail_len * (RADIX_BIT_LEN / 8)
+  let len = max(length, len)
+  let result = FixedArray::make(len, Byte::default())
+  for i in 0..<len {
+    if i / 4 >= self.len {
+      break
+    }
+    result[len - 1 - i] = ((self.limbs[i / 4] >> (i % 4 * 8)) & 0xffU)
+      .reinterpret_as_int()
+      .to_byte()
+  }
+  unsafe_fixedarray_to_bytes(result)
+}
+
+///|
+/// Performs a bitwise AND operation between two arbitrary-precision integers.
+///
+/// The operation is performed using two's complement representation, which means
+/// it handles both positive and negative numbers correctly. For negative
+/// numbers, the function first converts them to their two's complement form,
+/// performs the AND operation, and then converts the result back if necessary.
+///
+/// Parameters:
+///
+/// * `self` : The first arbitrary-precision integer operand.
+/// * `other` : The second arbitrary-precision integer operand.
+///
+/// Returns a new `BigInt` representing the result of the bitwise AND operation.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = @bigint.BigInt::from_string("42") // 0b101010
+///   let b = @bigint.BigInt::from_string("-12") // ~0b1011 + 1
+///   inspect(a & b, content="32") // 0b100000
+///   let a = @bigint.BigInt::from_string("-8") // ~0b111 + 1
+///   let b = @bigint.BigInt::from_string("-4") // ~0b11 + 1
+///   inspect(a & b, content="-8") // ~0b1011 + 1
+/// }
+/// ```
+pub impl BitAnd for BigInt with fn land(self : BigInt, other : BigInt) -> BigInt {
+  let max_length = if self.limbs.length() < other.limbs.length() {
+    other.limbs.length() + 1
+  } else {
+    self.limbs.length() + 1
+  }
+  // Extend the limbs to store the sign bits
+  let x_limbs = FixedArray::make(max_length, 0U)
+  x_limbs.unsafe_blit(0, self.limbs, 0, self.limbs.length())
+  let y_limbs = FixedArray::make(max_length, 0U)
+  y_limbs.unsafe_blit(0, other.limbs, 0, other.limbs.length())
+
+  // Calculate the complement code per 2
+  if self.sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] += 1
+      if x_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+  if other.sign == Negative {
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] = y_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] += 1
+      if y_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+
+  // Bit Ops
+  for i in 0..<x_limbs.length() {
+    x_limbs[i] = x_limbs[i] & y_limbs[i]
+  }
+
+  // Check whether the result is either positive or negative
+  let new_sign = if x_limbs[x_limbs.length() - 1] == 0xFFFFFFFFU {
+    Negative
+  } else {
+    Positive
+  }
+
+  // Restore as true code
+  if new_sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] -= 1
+      if x_limbs[i] != 0xFFFFFFFFU {
+        break
+      }
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+  }
+
+  // return the result
+  let limbs = FixedArray::make(max_length - 1, 0U)
+  limbs.unsafe_blit(0, x_limbs, 0, max_length - 1)
+  { limbs, sign: new_sign, len: normalize_len(limbs, max_length - 1) }
+}
+
+///|
+/// Performs a bitwise OR operation between two arbitrary-precision integers,
+/// following two's complement representation for negative numbers.
+///
+/// Parameters:
+///
+/// * `self` : The first arbitrary-precision integer operand.
+/// * `other` : The second arbitrary-precision integer operand.
+///
+/// Returns a new `BigInt` representing the result of the bitwise OR operation.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = @bigint.BigInt::from_string("42")
+///   let b = @bigint.BigInt::from_string("-12")
+///   inspect(a | b, content="-2")
+///   let c = @bigint.BigInt::from_string("-8")
+///   let d = @bigint.BigInt::from_string("-4")
+///   inspect(c | d, content="-4")
+/// }
+/// ```
+pub impl BitOr for BigInt with fn lor(self : BigInt, other : BigInt) -> BigInt {
+  let max_length = if self.limbs.length() < other.limbs.length() {
+    other.limbs.length() + 1
+  } else {
+    self.limbs.length() + 1
+  }
+  // Extend the limbs to store the sign bits
+  let x_limbs = FixedArray::make(max_length, 0U)
+  x_limbs.unsafe_blit(0, self.limbs, 0, self.limbs.length())
+  let y_limbs = FixedArray::make(max_length, 0U)
+  y_limbs.unsafe_blit(0, other.limbs, 0, other.limbs.length())
+
+  // Calculate the complement code per 2
+  if self.sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] += 1
+      if x_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+  if other.sign == Negative {
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] = y_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] += 1
+      if y_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+
+  // Bit Ops
+  for i in 0..<x_limbs.length() {
+    x_limbs[i] = x_limbs[i] | y_limbs[i]
+  }
+
+  // Check whether the result is either positive or negative
+  let new_sign = if x_limbs[x_limbs.length() - 1] == 0xFFFFFFFFU {
+    Negative
+  } else {
+    Positive
+  }
+
+  // Restore as true code
+  if new_sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] -= 1
+      if x_limbs[i] != 0xFFFFFFFFU {
+        break
+      }
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+  }
+
+  // return the result
+  let limbs = FixedArray::make(max_length - 1, 0U)
+  limbs.unsafe_blit(0, x_limbs, 0, max_length - 1)
+  { limbs, sign: new_sign, len: normalize_len(limbs, max_length - 1) }
+}
+
+///|
+/// Performs a bitwise XOR operation between two `BigInt` values, treating them
+/// as two's complement binary numbers.
+///
+/// Parameters:
+///
+/// * `self` : The first `BigInt` operand.
+/// * `other` : The second `BigInt` operand.
+///
+/// Returns a new `BigInt` value representing the bitwise XOR of the two
+/// operands.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let a = @bigint.BigInt::from_string("42")
+///   let b = @bigint.BigInt::from_string("-7")
+///   inspect(a ^ b, content="-45")
+///   let a = @bigint.BigInt::from_string("42")
+///   inspect(a ^ a, content="0") // XOR with self gives 0
+/// }
+/// ```
+pub impl BitXOr for BigInt with fn lxor(self : BigInt, other : BigInt) -> BigInt {
+  let max_length = if self.limbs.length() < other.limbs.length() {
+    other.limbs.length() + 1
+  } else {
+    self.limbs.length() + 1
+  }
+  // Extend the limbs to store the sign bits
+  let x_limbs = FixedArray::make(max_length, 0U)
+  x_limbs.unsafe_blit(0, self.limbs, 0, self.limbs.length())
+  let y_limbs = FixedArray::make(max_length, 0U)
+  y_limbs.unsafe_blit(0, other.limbs, 0, other.limbs.length())
+
+  // Calculate the complement code per 2
+  if self.sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] += 1
+      if x_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+  if other.sign == Negative {
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] = y_limbs[i] ^ 0xFFFFFFFFU
+    }
+    for i in 0..<y_limbs.length() {
+      y_limbs[i] += 1
+      if y_limbs[i] != 0x0U {
+        break
+      }
+    }
+  }
+
+  // Bit Ops
+  for i in 0..<x_limbs.length() {
+    x_limbs[i] = x_limbs[i] ^ y_limbs[i]
+  }
+
+  // Check whether the result is either positive or negative
+  let new_sign = if x_limbs[x_limbs.length() - 1] == 0xFFFFFFFFU {
+    Negative
+  } else {
+    Positive
+  }
+
+  // Restore as true code
+  if new_sign == Negative {
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] -= 1
+      if x_limbs[i] != 0xFFFFFFFFU {
+        break
+      }
+    }
+    for i in 0..<x_limbs.length() {
+      x_limbs[i] = x_limbs[i] ^ 0xFFFFFFFFU
+    }
+  }
+
+  // return the result
+  let limbs = FixedArray::make(max_length - 1, 0U)
+  limbs.unsafe_blit(0, x_limbs, 0, max_length - 1)
+  { limbs, sign: new_sign, len: normalize_len(limbs, max_length - 1) }
+}
+
+///|
+/// Converts a `BigInt` to a 32-bit signed integer (`Int`).
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to be converted.
+///
+/// Returns a 32-bit signed integer representing the lower 32 bits of the input
+/// `BigInt`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let big = 2147483648N // 2^31
+///   inspect(big.to_int(), content="-2147483648") // Overflow to Int.min_value
+/// }
+/// ```
+pub fn BigInt::to_int(self : BigInt) -> Int {
+  self.to_uint().reinterpret_as_int()
+}
+
+///|
+/// Converts a `BigInt` to an unsigned 32-bit integer (`UInt`).
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to be converted.
+///
+/// Returns a `UInt` value representing the lower 32 bits of the input `BigInt`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = 42N
+///   inspect(n.to_uint(), content="42")
+///   let neg = -1N
+///   inspect(neg.to_uint(), content="4294967295") // 2^32 - 1
+/// }
+/// ```
+pub fn BigInt::to_uint(self : BigInt) -> UInt {
+  let value = if self.sign == Negative { (1N << 32) + self } else { self }
+  value.limbs[0]
+}
+
+///|
+/// Converts a `BigInt` to a signed 64-bit integer (`Int64`).
+///
+/// Parameters:
+///
+/// * `value` : The `BigInt` value to be converted.
+///
+/// Returns a 64-bit signed integer (`Int64`) representing the lower 64 bits of
+/// the input `BigInt`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let big = 9223372036854775807N // max value of Int64
+///   inspect(big.to_int64(), content="9223372036854775807")
+///   let bigger = big + 1
+///   inspect(bigger.to_int64(), content="-9223372036854775808") // Overflow to Int64.min_value
+/// }
+/// ```
+pub fn BigInt::to_int64(self : BigInt) -> Int64 {
+  self.to_uint64().reinterpret_as_int64()
+}
+
+///|
+/// Converts a `BigInt` to an unsigned 64-bit integer (`UInt64`).
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value to be converted.
+///
+/// Returns a `UInt64` value representing the lower 64 bits of the input
+/// `BigInt`.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let n = 12345678901234567890N
+///   inspect(n.to_uint64(), content="12345678901234567890")
+///   let neg = -1N
+///   inspect(neg.to_uint64(), content="18446744073709551615") // 2^64 - 1
+/// }
+/// ```
+pub fn BigInt::to_uint64(self : BigInt) -> UInt64 {
+  let value = if self.sign == Negative { (1N << 64) + self } else { self }
+  let len = 64 / RADIX_BIT_LEN
+  let len = if value.len < len { value.len } else { len }
+  let mut result = 0UL
+  for i in len>..0 {
+    result = result << RADIX_BIT_LEN
+    result = result | (value.limbs[i].to_uint64() & RADIX_MASK)
+  }
+  result
+}
+
+///|
+/// Returns the number of bits required to represent a `BigInt` value in two's
+/// complement format, excluding the sign bit.
+///
+/// Parameters:
+///
+/// * `self` : The `BigInt` value whose bit length is to be calculated.
+///
+/// Example:
+///
+/// ```mbt check
+/// test {
+///   let pos = 16N // 10000
+///   inspect(pos.bit_length(), content="5")
+///   let neg = -16N // 
+///   inspect(neg.bit_length(), content="4")
+///   let zero = 0N
+///   inspect(zero.bit_length(), content="0")
+/// }
+/// ```
+pub fn BigInt::bit_length(self : BigInt) -> Int {
+  if self.len == 0 {
+    return 0
+  }
+  let mut bit_length = (self.len - 1) * RADIX_BIT_LEN +
+    (RADIX_BIT_LEN - self.limbs[self.len - 1].clz())
+  if self.sign == Negative {
+    // check if this number is a power of two
+    let mut total_bits = 0
+    for i in 0..<self.len {
+      total_bits += self.limbs[i].popcnt()
+    }
+    if total_bits == 1 {
+      bit_length -= 1
+    }
+  }
+  bit_length
+}
+
+///|
+/// Returns the number of trailing zero bits in the binary representation of 
+/// the absolute value of this BigInt.
+///
+/// Example:
+/// ```mbt check
+/// test {
+///   inspect(8N.ctz(), content="3") // 0b1000
+///   inspect(12N.ctz(), content="2") // 0b1100
+///   inspect(0N.ctz(), content="0")
+/// }
+/// ```
+pub fn BigInt::ctz(self : BigInt) -> Int {
+  if self.is_zero() {
+    return 0
+  }
+
+  // Find first non-zero limb
+  let i = for i = 0; i < self.len && self.limbs[i] == 0; {
+    continue i + 1
+  } nobreak {
+    i
+  }
+  RADIX_BIT_LEN * i + self.limbs[i].ctz()
+}
+
+///|
+fn unchecked_double_to_int(d : Double) -> Int = "%f64_to_i32"
+
+///|
+fn unsafe_fixedarray_to_bytes(arr : FixedArray[Byte]) -> Bytes = "%identity"
+
+///|
+fn can_convert_to_int(x : BigInt) -> Bool {
+  // bigint range from [-(2^32 - 1), 2^32 - 1] has len == 1. But here we only
+  // want bigint from [-2^31, 2^31 - 1]
+  x.len == 1 &&
+  (if x.sign == Negative {
+    x.limbs[0] <= 0x80000000
+  } else {
+    x.limbs[0] < 0x80000000
+  })
+}
+
+///|
+fn can_convert_to_int64(x : BigInt) -> Bool {
+  if x.len == 1 {
+    true
+  } else if x.len == 2 {
+    if x.sign == Negative {
+      x.limbs[1] < 0x80000000 || (x.limbs[1] == 0x80000000 && x.limbs[0] == 0)
+    } else {
+      x.limbs[1] < 0x80000000
+    }
+  } else {
+    false
+  }
+}
+
+///|
+fn is_neg(x : BigInt) -> Bool {
+  x.sign == Negative
+}
+
+///|
+test "limb length" {
+  inspect(0N.len, content="1")
+  inspect(1N.len, content="1")
+  inspect((-1N).len, content="1")
+  inspect(2147483647N.len, content="1") // Int.max_value
+  inspect((-2147483648N).len, content="1") // Int.min_value
+  inspect(2147483648N.len, content="1") // Int.max_value + 1
+  inspect((-2147483649N).len, content="1") // Int.min_value - 1
+  inspect(4294967295N.len, content="1") // 2^32 - 1
+  inspect((-4294967295N).len, content="1") // -(2^32 - 1)
+  inspect(4294967296N.len, content="2") // 2^32
+  inspect((-4294967296N).len, content="2") // -2^32
+}
+
+///|
+fn BigInt::limbs(self : Self) -> Array[UInt] {
+  self.limbs[:self.len].to_owned()
+}

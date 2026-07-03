@@ -1,0 +1,41 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "moonbitlang/core/quickcheck"
+
+import {
+  "moonbitlang/core/quickcheck/splitmix",
+}
+
+// Values
+pub fn[T : Arbitrary] gen(size? : Int, state? : @splitmix.RandomState) -> T
+
+pub fn[X : Arbitrary] samples(Int) -> Array[X]
+
+// Errors
+
+// Types and methods
+
+// Type aliases
+
+// Traits
+pub(open) trait Arbitrary {
+  fn arbitrary(Int, @splitmix.RandomState) -> Self
+}
+pub impl Arbitrary for Unit
+pub impl Arbitrary for Bool
+pub impl Arbitrary for Byte
+pub impl Arbitrary for Char
+pub impl Arbitrary for Int
+pub impl Arbitrary for Int64
+pub impl Arbitrary for UInt
+pub impl Arbitrary for UInt64
+pub impl Arbitrary for Float
+pub impl Arbitrary for Double
+pub impl Arbitrary for String
+pub impl[X : Arbitrary] Arbitrary for X?
+pub impl[T : Arbitrary, E : Arbitrary] Arbitrary for Result[T, E]
+pub impl[X : Arbitrary] Arbitrary for FixedArray[X]
+pub impl Arbitrary for Bytes
+pub impl[X : Arbitrary] Arbitrary for Array[X]
+pub impl[A : Arbitrary] Arbitrary for ArrayView[A]
+pub impl[X : Arbitrary] Arbitrary for Iter[X]
+
